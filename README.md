@@ -12,6 +12,9 @@ NES Sound Generator creates authentic 8-bit NES-style sound effects and music us
 - **Save & Download**: Save your creations and download them as WAV files
 - **AI-Powered**: Claude 3.7 Sonnet creates audio parameters that accurately mimic the NES sound capabilities
 
+## Screenshot
+![screenshot.png](screenshot.png)
+
 ## Requirements
 
 - Node.js 18.x or later
