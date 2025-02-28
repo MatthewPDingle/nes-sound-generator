@@ -1,0 +1,12 @@
+{
+  "name": "nes-sound-generator",
+  "version": "1.0.0",
+  "description": "NES Sound Effect Generator with Claude 3.7",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.17.1" 
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}

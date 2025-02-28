@@ -1,0 +1,15 @@
+# Ignore all `.log` files
+*.log
+
+# Ignore a specific file
+package-lock.json
+
+# Ignore a specific folder and its contents
+/node_modules/
+/.vercel/
+
+# Ignore all `.env` files
+.env
+
+# Ignore all `.tmp` folders anywhere in the repository
+**/.tmp/
