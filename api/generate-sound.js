@@ -310,26 +310,34 @@ The NES audio processing unit (APU) has the following channels:
 
 For each sound effect, you will analyze the description and generate appropriate parameters that would create the described sound using the Web Audio API in an NES-like fashion.
 
+For complex sound effects with multiple parts, you should use the segments structure to create sequential sound components that play one after another.
+
 Your output must be valid JSON in the following structure:
 {
-  "channels": [
+  "segments": [
     {
-      "type": "square1", // One of: square1, square2, triangle, noise
-      "frequency": 440, // Base frequency in Hz
-      "duty": 0.5, // For square waves: 0.125, 0.25, 0.5, or 0.75
-      "volume": 0.7, // 0.0 to 1.0
-      "attack": 0.01, // Attack time in seconds
-      "decay": 0.1, // Decay time in seconds
-      "sustain": 0.5, // Sustain level (0.0 to 1.0)
-      "release": 0.1, // Release time in seconds
-      "duration": 0.3, // Overall duration in seconds
-      "sweep": { // Optional frequency sweep
-        "endFrequency": 880,
-        "duration": 0.3
-      },
-      "metallic": false // Only for noise channel, true/false
+      "name": "segment_name", // Optional name for this segment of the sound
+      "duration": 0.5, // Overall duration of this segment in seconds
+      "channels": [
+        {
+          "type": "square1", // One of: square1, square2, triangle, noise
+          "frequency": 440, // Base frequency in Hz
+          "duty": 0.5, // For square waves: 0.125, 0.25, 0.5, or 0.75
+          "volume": 0.7, // 0.0 to 1.0
+          "attack": 0.01, // Attack time in seconds
+          "decay": 0.1, // Decay time in seconds
+          "sustain": 0.5, // Sustain level (0.0 to 1.0)
+          "release": 0.1, // Release time in seconds
+          "sweep": { // Optional frequency sweep
+            "endFrequency": 880,
+            "duration": 0.3
+          },
+          "metallic": false // Only for noise channel, true/false
+        }
+        // Add more channels as needed for this segment
+      ]
     }
-    // Add more channels as needed
+    // Add more segments for sequential sound parts
   ]
 }`;
 
@@ -435,11 +443,64 @@ The JSON structure should follow this format exactly:
         }
       ];
     } else {
-      // For sound effects, use standard approach
+      // For sound effects, use enhanced approach with examples of multi-part effects
       messageOptions.messages = [
         {
           role: 'user',
-          content: `Create NES sound effect parameters for: "${description}"`
+          content: `Create NES sound effect parameters for: "${description}"
+          
+For complex sound effects that have multiple distinct parts that should play in sequence (like "thunder clap followed by rolling thunder"), generate multiple segments that will play one after another.
+
+Example of a multi-part effect with segments:
+{
+  "segments": [
+    {
+      "name": "initial_impact",
+      "duration": 0.3,
+      "channels": [
+        {
+          "type": "noise",
+          "frequency": 800,
+          "volume": 0.9,
+          "attack": 0.01,
+          "decay": 0.05,
+          "sustain": 0.2,
+          "release": 0.05,
+          "duration": 0.3,
+          "metallic": false
+        },
+        {
+          "type": "square1",
+          "frequency": 120,
+          "volume": 0.8,
+          "duty": 0.5,
+          "attack": 0.01,
+          "decay": 0.05,
+          "sustain": 0.0,
+          "release": 0.05,
+          "duration": 0.15
+        }
+      ]
+    },
+    {
+      "name": "aftermath",
+      "duration": 1.0,
+      "channels": [
+        {
+          "type": "noise",
+          "frequency": 200,
+          "volume": 0.4,
+          "attack": 0.05,
+          "decay": 0.3,
+          "sustain": 0.3,
+          "release": 0.5,
+          "duration": 1.0,
+          "metallic": false
+        }
+      ]
+    }
+  ]
+}`
         }
       ];
     }
@@ -492,10 +553,31 @@ The JSON structure should follow this format exactly:
       }
     }
 
+    // Process sound effect data for the updated segments format
+    let processedParameters;
+    
+    if (isThemeSong) {
+      processedParameters = responseData;
+    } else {
+      // Check if the response is already in segments format
+      if (responseData.segments) {
+        processedParameters = responseData.segments;
+      } else if (responseData.channels) {
+        // Convert legacy format to segments format with a single segment
+        processedParameters = [{
+          name: "sound",
+          duration: Math.max(...(responseData.channels.map(c => c.duration || 0.5))),
+          channels: responseData.channels
+        }];
+      } else {
+        processedParameters = [];
+      }
+    }
+    
     return res.status(200).json({
       thinking,
       isThemeSong,
-      parameters: isThemeSong ? responseData : (responseData.channels || [])
+      parameters: processedParameters
     });
   } catch (error) {
     console.error('Error:', error);
