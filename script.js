@@ -683,11 +683,27 @@ function playGeneratedSound() {
     // Stop any currently playing sounds
     stopAllSounds();
     
-    const now = audioCtx.currentTime;
-    let maxDuration = 0;
+    // Play segments sequentially
+    playNextSegment(0);
+}
+
+// Recursive function to play segments one after another
+function playNextSegment(segmentIndex) {
+    if (segmentIndex >= currentSoundParameters.length) {
+        updateStatus('');
+        return;
+    }
     
-    // Create and play each channel
-    currentSoundParameters.forEach(params => {
+    const segment = currentSoundParameters[segmentIndex];
+    const now = audioCtx.currentTime;
+    let segmentDuration = segment.duration || 0;
+    
+    // Get segment name for status display
+    const segmentName = segment.name || `Part ${segmentIndex + 1}`;
+    updateStatus(`Playing sound effect: ${segmentName}...`);
+    
+    // Create and play each channel in this segment
+    segment.channels.forEach(params => {
         let node = null;
         
         // Common parameters
@@ -701,6 +717,11 @@ function playGeneratedSound() {
             sustain: params.sustain || 0.7,
             release: params.release || 0.1
         };
+        
+        // Update segment duration if any channel has longer duration
+        if (params.duration && params.duration > segmentDuration) {
+            segmentDuration = params.duration;
+        }
         
         // Add sweep if present
         if (params.sweep) {
@@ -737,19 +758,12 @@ function playGeneratedSound() {
         if (node) {
             activeNodes.push(node);
         }
-        
-        // Track max duration for status updates
-        if (options.stopTime - now > maxDuration) {
-            maxDuration = options.stopTime - now;
-        }
     });
     
-    updateStatus('Playing sound effect...');
-    
-    // Reset status after sound completes
+    // Schedule the next segment to play after this one finishes
     setTimeout(() => {
-        updateStatus('');
-    }, maxDuration * 1000 + 100);
+        playNextSegment(segmentIndex + 1);
+    }, segmentDuration * 1000 + 50); // Small buffer between segments
 }
 
 // Play a single note for the theme song
@@ -1234,22 +1248,32 @@ async function saveSoundEffect() {
     const soundId = 'sound-' + Date.now();
     
     try {
-        // Find the longest duration sound
-        let maxDuration = 0;
-        currentSoundParameters.forEach(params => {
-            const duration = params.duration || 0.5;
-            if (duration > maxDuration) {
-                maxDuration = duration;
+        // Calculate total duration of all segments
+        let totalDuration = 0;
+        currentSoundParameters.forEach(segment => {
+            // Get segment duration (either directly from segment or from the longest channel)
+            let segmentDuration = segment.duration || 0;
+            
+            // If segment has channels, check their durations too
+            if (segment.channels) {
+                segment.channels.forEach(channel => {
+                    const channelDuration = channel.duration || 0.5;
+                    if (channelDuration > segmentDuration) {
+                        segmentDuration = channelDuration;
+                    }
+                });
             }
+            
+            totalDuration += segmentDuration;
         });
         
         // Add a small buffer to ensure we capture the full sound
-        maxDuration += 0.2; // Reduced from 0.5 to fix the silent gap issue
+        totalDuration += 0.2; // Buffer for smooth transitions
         
         // Create an offline audio context for rendering with a more precise length
         const offlineCtx = new OfflineAudioContext({
             numberOfChannels: 1,
-            length: Math.ceil(44100 * maxDuration),
+            length: Math.ceil(44100 * totalDuration),
             sampleRate: 44100
         });
         
@@ -1258,45 +1282,59 @@ async function saveSoundEffect() {
         offlineGain.gain.value = 0.5;
         offlineGain.connect(offlineCtx.destination);
         
-        // Recreate all sound nodes in the offline context
-        const now = 0;
-        currentSoundParameters.forEach(params => {
-            // Common parameters
-            const options = {
-                frequency: params.frequency || 440,
-                startTime: now,
-                stopTime: now + (params.duration || 0.5),
-                volume: params.volume || 0.5,
-                attack: params.attack || 0.01,
-                decay: params.decay || 0.1,
-                sustain: params.sustain || 0.7,
-                release: params.release || 0.1
-            };
+        // Render each segment sequentially
+        let currentTime = 0;
+        
+        for (const segment of currentSoundParameters) {
+            let segmentDuration = segment.duration || 0;
             
-            // Add sweep if present
-            if (params.sweep) {
-                options.sweep = {
-                    endFrequency: params.sweep.endFrequency,
-                    duration: params.sweep.duration
+            // Recreate all channels in this segment
+            segment.channels.forEach(params => {
+                // Common parameters
+                const options = {
+                    frequency: params.frequency || 440,
+                    startTime: currentTime,
+                    stopTime: currentTime + (params.duration || 0.5),
+                    volume: params.volume || 0.5,
+                    attack: params.attack || 0.01,
+                    decay: params.decay || 0.1,
+                    sustain: params.sustain || 0.7,
+                    release: params.release || 0.1
                 };
-            }
+                
+                // Update segment duration if any channel has longer duration
+                if (params.duration && params.duration > segmentDuration) {
+                    segmentDuration = params.duration;
+                }
+                
+                // Add sweep if present
+                if (params.sweep) {
+                    options.sweep = {
+                        endFrequency: params.sweep.endFrequency,
+                        duration: params.sweep.duration
+                    };
+                }
+                
+                // Create appropriate node based on type
+                switch (params.type) {
+                    case 'square1':
+                    case 'square2':
+                        options.duty = params.duty || 0.5;
+                        createSquareOscillatorOffline(offlineCtx, offlineGain, options);
+                        break;
+                    case 'triangle':
+                        createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
+                        break;
+                    case 'noise':
+                        options.metallic = params.metallic || false;
+                        createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
+                        break;
+                }
+            });
             
-            // Create appropriate node based on type
-            switch (params.type) {
-                case 'square1':
-                case 'square2':
-                    options.duty = params.duty || 0.5;
-                    createSquareOscillatorOffline(offlineCtx, offlineGain, options);
-                    break;
-                case 'triangle':
-                    createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
-                    break;
-                case 'noise':
-                    options.metallic = params.metallic || false;
-                    createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
-                    break;
-            }
-        });
+            // Move time cursor forward by this segment's duration
+            currentTime += segmentDuration;
+        }
         
         // Start rendering
         updateStatus('Rendering sound for download...');

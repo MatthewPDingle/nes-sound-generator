@@ -13,3 +13,4 @@ package-lock.json
 
 # Ignore all `.tmp` folders anywhere in the repository
 **/.tmp/
+.vercel

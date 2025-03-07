@@ -1,12 +1,13 @@
 # NES Sound Generator with Claude 3.7
 
-Since Sonnet 3.7 Extended Thinking did such a remarkable job on the intial comparison with other models, I fleshed it out into this. 
+Since Sonnet 3.7 Extended Thinking did such a remarkable job on the initial comparison with other models, I fleshed it out into this. 
 
 NES Sound Generator creates authentic 8-bit NES-style sound effects and music using Claude 3.7 Sonnet. This web app generates sound parameters for the Nintendo Entertainment System's audio processing unit (APU) and plays them back in your browser.
 
 ## Features
 
 - **Sound Effects**: Generate authentic NES-style sound effects from text descriptions
+- **Multi-segment Sound Effects**: Create complex sequential sounds with multiple parts that play in sequence
 - **Theme Songs**: Compose short chiptune music tracks with multiple channels
 - **Audio Visualization**: See real-time visualization of audio channels during playback
 - **Save & Download**: Save your creations and download them as WAV files
@@ -71,10 +72,23 @@ This will deploy your app to a Vercel URL and set up the necessary serverless fu
 
 1. Select the "Sound Effects" tab
 2. Enter a description of the sound you want (e.g., "spaceship landing", "treasure chest opening")
-3. Click "Generate"
-4. The sound will automatically play and be saved to your history
-5. Use the "Show" toggle to view the generated parameters
-6. Replay sounds from history or download them as WAV files
+3. For complex sequential effects, describe the sequence (e.g., "thunder clap followed by rolling thunder") 
+4. Click "Generate"
+5. The sound will automatically play and be saved to your history
+6. Use the "Show" toggle to view the generated parameters
+7. Replay sounds from history or download them as WAV files
+
+#### Multi-segment Sound Effects
+
+The system now supports complex sound effects with multiple sequential parts. Try descriptions like:
+
+- "multifaceted powerup with 3 notes: mid, low, and then high" ([listen to example](powerup.wav))
+- "bells ringing three times" ([listen to example](bells.wav)) 
+- "three quiet fading thumping footsteps down stone stairs" ([listen to example](footsteps.wav))
+- "thunder clap followed by rolling thunder"
+- "spaceship starting up, hovering, then blasting off"
+
+Multi-segment effects are played in sequence, with each segment starting after the previous one finishes.
 
 ### Theme Songs
 
@@ -98,6 +112,35 @@ The app simulates the NES Audio Processing Unit's four channels:
 1. **Square Wave 1 & 2**: For melodies, harmonies, and effects
 2. **Triangle Wave**: For bass lines and deeper tones
 3. **Noise Channel**: For percussion and textured effects
+
+### JSON Structure
+
+Sound effects now use a segments-based structure:
+
+```json
+{
+  "segments": [
+    {
+      "name": "first_part",
+      "duration": 0.5,
+      "channels": [
+        { "type": "square1", ... },
+        { "type": "noise", ... }
+      ]
+    },
+    {
+      "name": "second_part",
+      "duration": 0.8,
+      "channels": [
+        { "type": "square2", ... },
+        { "type": "triangle", ... }
+      ]
+    }
+  ]
+}
+```
+
+Each segment plays sequentially, with its channels played simultaneously.
 
 ## File Structure
 
@@ -123,8 +166,17 @@ The application offers two models:
 - Sound generation is limited by the browser's Web Audio API capabilities
 - Theme songs use a simplified representation of NES music capabilities
 - Generation may take 5-60 seconds depending on complexity and the selected model
-- The best sound effects seem to be common ones.  An uncommon sound effect like "a duck quacking" often doesn't produce results that sound much like the description.
+- The best sound effects seem to be common ones. An uncommon sound effect like "a duck quacking" often doesn't produce results that sound much like the description.
 - Theme songs aren't setup to loop
+
+## Recent Updates
+
+### Multi-segment Sound Effects (March 2025)
+- Added support for complex sequential sound effects with multiple segments
+- Each segment plays after the previous one finishes
+- Improved Claude prompting to encourage multi-part sound design
+- Updated playback and rendering systems to handle sequential segments
+- Added compatibility layer for legacy single-segment sounds
 
 ## Methodology
 
