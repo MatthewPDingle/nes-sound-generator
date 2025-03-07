@@ -93,11 +93,23 @@ Multi-segment effects are played in sequence, with each segment starting after t
 ### Theme Songs
 
 1. Select the "Theme Songs" tab
-2. Enter a description of the music you want (e.g., "heroic adventure theme", "underwater level")
-3. Click "Compose"
-4. The theme will automatically play and be saved to your history
-5. Use the "Show" toggle to view the generated musical score
-6. Play/download theme songs from the history section
+2. Enter a description of the music you want (e.g., "heroic adventure theme", "underwater level") 
+3. For complex compositions, specify the structure (e.g., "space opera with tense intro, heroic verse, and triumphant chorus")
+4. Click "Compose"
+5. The theme will automatically play and be saved to your history
+6. Use the "Show" toggle to view the generated musical score
+7. Play/download theme songs from the history section
+
+#### Multi-section Theme Songs
+
+The system now supports complex musical compositions with multiple sequential sections. Try descriptions like:
+
+- "happy upbeat theme with distinct intro, verse, chorus, and bridge sections"
+- "epic boss battle music with tense intro and frantic main section"
+- "peaceful countryside theme with morning intro, day exploration section, and sunset finale"
+- "dungeon theme with mysterious intro, danger section, and victory ending"
+
+Each section plays in sequence with its own musical character and instrumentation.
 
 ## Technical Details
 
@@ -115,7 +127,9 @@ The app simulates the NES Audio Processing Unit's four channels:
 
 ### JSON Structure
 
-Sound effects now use a segments-based structure:
+#### Sound Effect Structure
+
+Sound effects use a segments-based structure:
 
 ```json
 {
@@ -141,6 +155,49 @@ Sound effects now use a segments-based structure:
 ```
 
 Each segment plays sequentially, with its channels played simultaneously.
+
+#### Theme Song Structure
+
+Theme songs use a sections-based structure:
+
+```json
+{
+  "title": "Example Theme",
+  "tempo": 120,
+  "timeSignature": "4/4",
+  "loopCount": 1,
+  "sections": [
+    {
+      "name": "intro",
+      "measures": 4,
+      "tracks": [
+        {
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            { "note": "C4", "duration": 0.25, ... }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chorus",
+      "measures": 8,
+      "tracks": [
+        {
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            { "note": "E4", "duration": 0.25, ... }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Each section plays sequentially with its own musical structure and instrumentation.
 
 ## File Structure
 
@@ -170,6 +227,13 @@ The application offers two models:
 - Theme songs aren't setup to loop
 
 ## Recent Updates
+
+### Multi-section Theme Songs (March 2025)
+- Added support for complex musical compositions with distinct sections (intro, verse, chorus, etc.)
+- Each section plays sequentially with proper timing and transitions
+- Improved Claude prompting to create more structured and varied compositions
+- Sections can have different instrumentation and musical structure
+- Added compatibility with legacy theme song format
 
 ### Multi-segment Sound Effects (March 2025)
 - Added support for complex sequential sound effects with multiple segments

@@ -356,26 +356,56 @@ The NES audio processing unit (APU) has the following channels:
    - Used for percussion and sound effects
    - Can create drum-like and rhythmic elements
 
+For complex songs with multiple parts (intro, verse, chorus, etc.), use the sections array to create distinct musical sections that will play in sequence.
+
 Your output must be in valid JSON format with no text before or after, following this exact structure:
 {
   "title": "Example Theme",
   "tempo": 120, 
   "timeSignature": "4/4",
-  "loopCount": 2,
-  "tracks": [
+  "loopCount": 1,
+  "sections": [
     {
-      "name": "Melody",
-      "channel": "square1",
-      "sequence": [
+      "name": "intro",
+      "measures": 4,
+      "tracks": [
         {
-          "note": "C4",
-          "duration": 0.25,
-          "duty": 0.5,
-          "volume": 0.8,
-          "attack": 0.01,
-          "decay": 0.1,
-          "sustain": 0.7,
-          "release": 0.05
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            {
+              "note": "C4",
+              "duration": 0.25,
+              "duty": 0.5,
+              "volume": 0.8,
+              "attack": 0.01,
+              "decay": 0.1,
+              "sustain": 0.7,
+              "release": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "verse",
+      "measures": 8,
+      "tracks": [
+        {
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            {
+              "note": "E4",
+              "duration": 0.25,
+              "duty": 0.5,
+              "volume": 0.8,
+              "attack": 0.01,
+              "decay": 0.1,
+              "sustain": 0.7,
+              "release": 0.05
+            }
+          ]
         }
       ]
     }
@@ -405,36 +435,66 @@ IMPORTANT FORMATTING INSTRUCTIONS:
           role: 'user',
           content: `Compose a comprehensive NES-style theme song for: "${description}". Output ONLY the complete JSON data structure with no introduction or explanation.
 
+Create a multi-section song with distinct musical parts like intro, verse, chorus that play in sequence.
+
 The JSON structure should follow this format exactly:
 {
   "title": "${description}",
   "tempo": 120,
   "timeSignature": "4/4",
-  "loopCount": 2,
-  "tracks": [
+  "loopCount": 1,
+  "sections": [
     {
-      "name": "Melody",
-      "channel": "square1",
-      "sequence": [
+      "name": "intro",
+      "measures": 4,
+      "tracks": [
         {
-          "note": "C4",
-          "duration": 0.25,
-          "duty": 0.5,
-          "volume": 0.8,
-          "attack": 0.01,
-          "decay": 0.1,
-          "sustain": 0.7,
-          "release": 0.05
-        },
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            {
+              "note": "C4",
+              "duration": 0.25,
+              "duty": 0.5,
+              "volume": 0.8,
+              "attack": 0.01,
+              "decay": 0.1,
+              "sustain": 0.7,
+              "release": 0.05
+            },
+            {
+              "note": "D4",
+              "duration": 0.25,
+              "duty": 0.5,
+              "volume": 0.8,
+              "attack": 0.01,
+              "decay": 0.1,
+              "sustain": 0.7,
+              "release": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "verse",
+      "measures": 8,
+      "tracks": [
         {
-          "note": "D4",
-          "duration": 0.25,
-          "duty": 0.5,
-          "volume": 0.8,
-          "attack": 0.01,
-          "decay": 0.1,
-          "sustain": 0.7,
-          "release": 0.05
+          "name": "Melody",
+          "channel": "square1",
+          "sequence": [
+            {
+              "note": "E4",
+              "duration": 0.25,
+              "duty": 0.5,
+              "volume": 0.8,
+              "attack": 0.01,
+              "decay": 0.1,
+              "sustain": 0.7,
+              "release": 0.05
+            }
+          ]
         }
       ]
     }
@@ -553,13 +613,39 @@ Example of a multi-part effect with segments:
       }
     }
 
-    // Process sound effect data for the updated segments format
+    // Process response data for the updated formats
     let processedParameters;
     
     if (isThemeSong) {
-      processedParameters = responseData;
+      // Handle theme song data
+      if (responseData.sections) {
+        // New multi-section format
+        processedParameters = responseData;
+      } else if (responseData.tracks) {
+        // Convert legacy format to sections format with a single section
+        processedParameters = {
+          title: responseData.title || "Theme Song",
+          tempo: responseData.tempo || 120,
+          timeSignature: responseData.timeSignature || "4/4",
+          loopCount: responseData.loopCount || 1,
+          sections: [{
+            name: "main",
+            measures: 16,
+            tracks: responseData.tracks
+          }]
+        };
+      } else {
+        // Empty default 
+        processedParameters = {
+          title: "Theme Song",
+          tempo: 120,
+          timeSignature: "4/4",
+          loopCount: 1,
+          sections: []
+        };
+      }
     } else {
-      // Check if the response is already in segments format
+      // Handle sound effect data
       if (responseData.segments) {
         processedParameters = responseData.segments;
       } else if (responseData.channels) {

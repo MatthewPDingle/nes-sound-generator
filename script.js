@@ -835,7 +835,7 @@ function playMusicalNote(note, channel, startTime) {
 
 // Start playing the theme song
 function playThemeSong() {
-    if (!currentThemeSongParameters || !currentThemeSongParameters.tracks) {
+    if (!currentThemeSongParameters || !currentThemeSongParameters.sections) {
         updateStatus('No theme song parameters available');
         return;
     }
@@ -859,13 +859,34 @@ function playThemeSong() {
     
     currentlyPlayingMusic = true;
     
-    // Prepare the music sequence
-    prepareMusicSequence();
-    
-    // Start playing the sequence
-    scheduleMusicSequence();
+    // Play sections sequentially
+    playNextSection(0);
     
     updateStatus('Playing theme song...');
+}
+
+// Recursive function to play sections one after another
+function playNextSection(sectionIndex) {
+    if (sectionIndex >= currentThemeSongParameters.sections.length) {
+        updateStatus('Theme song completed');
+        currentlyPlayingMusic = false;
+        return;
+    }
+    
+    const section = currentThemeSongParameters.sections[sectionIndex];
+    
+    // Get section name for status display
+    const sectionName = section.name || `Section ${sectionIndex + 1}`;
+    updateStatus(`Playing theme song: ${sectionName}...`);
+    
+    // Prepare and play this section
+    prepareMusicSequenceForSection(section);
+    
+    // Start playing the sequence for this section
+    scheduleMusicSequence(() => {
+        // When this section finishes, play the next one
+        playNextSection(sectionIndex + 1);
+    });
 }
 
 // Stop the theme song
@@ -874,9 +895,9 @@ function stopThemeSong() {
     updateStatus('Theme song stopped');
 }
 
-// Prepare the music sequence for playback
-function prepareMusicSequence() {
-    if (!currentThemeSongParameters || !currentThemeSongParameters.tracks) return;
+// Prepare the music sequence for a specific section
+function prepareMusicSequenceForSection(section) {
+    if (!section || !section.tracks) return;
     
     const tempo = currentThemeSongParameters.tempo || 120;
     const secondsPerBeat = 60 / tempo;
@@ -884,9 +905,9 @@ function prepareMusicSequence() {
     // Initialize music sequence
     currentMusicSequence = [];
     
-    // Calculate total duration of the song
+    // Calculate total duration of the section
     let totalBeats = 0;
-    currentThemeSongParameters.tracks.forEach(track => {
+    section.tracks.forEach(track => {
         if (!track.sequence) return;
         
         let trackBeats = 0;
@@ -899,11 +920,19 @@ function prepareMusicSequence() {
         }
     });
     
-    // Set loop count
-    const loopCount = currentThemeSongParameters.loopCount || 1;
+    // If section has measures defined, use that for consistent length
+    if (section.measures && section.measures > 0) {
+        // Each measure is typically 4 beats in 4/4 time
+        const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
+        const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
+        totalBeats = section.measures * beatsPerMeasure;
+    }
+    
+    // Set loop count (only applies within a section)
+    const loopCount = 1; // Sections play once each
     
     // Generate note events for each track
-    currentThemeSongParameters.tracks.forEach(track => {
+    section.tracks.forEach(track => {
         if (!track.sequence) return;
         
         const channel = track.channel;
@@ -936,8 +965,11 @@ function prepareMusicSequence() {
 }
 
 // Schedule and play the music sequence
-function scheduleMusicSequence() {
-    if (!currentMusicSequence || !currentMusicSequence.length || !currentlyPlayingMusic) return;
+function scheduleMusicSequence(onComplete) {
+    if (!currentMusicSequence || !currentMusicSequence.length || !currentlyPlayingMusic) {
+        if (typeof onComplete === 'function') onComplete();
+        return;
+    }
     
     const now = audioCtx.currentTime;
     const scheduleAheadTime = 0.2; // Schedule 200ms ahead
@@ -968,7 +1000,8 @@ function scheduleMusicSequence() {
     // Schedule next update
     if (minNextTime < Infinity) {
         const timeUntilNext = (minNextTime - now) * 1000;
-        musicSchedulerId = setTimeout(scheduleMusicSequence, Math.max(10, timeUntilNext - 50));
+        musicSchedulerId = setTimeout(() => scheduleMusicSequence(onComplete), 
+                                     Math.max(10, timeUntilNext - 50));
     } else {
         // Check if all notes have been played
         const allPlayed = currentMusicSequence.every(event => event.hasPlayed);
@@ -976,14 +1009,15 @@ function scheduleMusicSequence() {
         if (allPlayed) {
             setTimeout(() => {
                 if (currentlyPlayingMusic) {
-                    // All notes played, reset and loop if needed
-                    updateStatus('Theme song completed');
-                    currentlyPlayingMusic = false;
+                    // This section is completed
+                    if (typeof onComplete === 'function') {
+                        onComplete();
+                    }
                 }
             }, 1000); // Wait a bit after last note
         } else {
             // Schedule next check
-            musicSchedulerId = setTimeout(scheduleMusicSequence, 100);
+            musicSchedulerId = setTimeout(() => scheduleMusicSequence(onComplete), 100);
         }
     }
 }
@@ -1367,7 +1401,7 @@ async function saveSoundEffect() {
 
 // Function to render and save theme song
 async function saveThemeSong() {
-    if (!currentThemeSongParameters || !currentThemeSongParameters.tracks) {
+    if (!currentThemeSongParameters || !currentThemeSongParameters.sections) {
         updateStatus('No theme song to save');
         return;
     }
@@ -1377,25 +1411,40 @@ async function saveThemeSong() {
     const soundId = 'music-' + Date.now();
     
     try {
-        // Calculate total duration of the song
+        // Calculate total duration of all sections combined
         const tempo = currentThemeSongParameters.tempo || 120;
         const secondsPerBeat = 60 / tempo;
+        const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
+        const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
         
         let totalBeats = 0;
-        currentThemeSongParameters.tracks.forEach(track => {
-            if (!track.sequence) return;
-            
-            let trackBeats = 0;
-            track.sequence.forEach(note => {
-                trackBeats += note.duration || 0.25;
-            });
-            
-            if (trackBeats > totalBeats) {
-                totalBeats = trackBeats;
+        // Calculate beats for each section
+        currentThemeSongParameters.sections.forEach(section => {
+            if (section.measures && section.measures > 0) {
+                // If section has measures, use that for length
+                totalBeats += section.measures * beatsPerMeasure;
+            } else {
+                // Otherwise calculate based on track note durations
+                let sectionBeats = 0;
+                if (section.tracks) {
+                    section.tracks.forEach(track => {
+                        if (!track.sequence) return;
+                        
+                        let trackBeats = 0;
+                        track.sequence.forEach(note => {
+                            trackBeats += note.duration || 0.25;
+                        });
+                        
+                        if (trackBeats > sectionBeats) {
+                            sectionBeats = trackBeats;
+                        }
+                    });
+                }
+                totalBeats += sectionBeats;
             }
         });
         
-        // Set loop count
+        // Set loop count (applies to entire song)
         const loopCount = currentThemeSongParameters.loopCount || 1;
         const totalSongBeats = totalBeats * loopCount;
         
@@ -1414,66 +1463,93 @@ async function saveThemeSong() {
         offlineGain.gain.value = 0.5;
         offlineGain.connect(offlineCtx.destination);
         
-        // Generate all notes for the theme song
-        currentThemeSongParameters.tracks.forEach(track => {
-            if (!track.sequence) return;
+        let currentBeatPosition = 0;
+        
+        // For each loop of the entire song
+        for (let loop = 0; loop < loopCount; loop++) {
+            const loopStartBeat = loop * totalBeats;
+            currentBeatPosition = loopStartBeat;
             
-            const channel = track.channel;
-            
-            // For each loop
-            for (let loop = 0; loop < loopCount; loop++) {
-                let beatPosition = loop * totalBeats;
+            // Process each section sequentially
+            for (const section of currentThemeSongParameters.sections) {
+                let sectionDuration = 0;
                 
-                // For each note in the sequence
-                track.sequence.forEach(note => {
-                    // Skip rests
-                    if (note.note === 'rest') {
-                        beatPosition += note.duration || 0.25;
-                        return;
-                    }
-                    
-                    // Convert note name to frequency
-                    const frequency = noteToFreq[note.note] || 440;
-                    
-                    // Calculate timing
-                    const startTime = beatPosition * secondsPerBeat;
-                    const noteDuration = (note.duration || 0.25) * secondsPerBeat;
-                    const stopTime = startTime + noteDuration;
-                    
-                    // Common parameters
-                    const options = {
-                        frequency: frequency,
-                        startTime: startTime,
-                        stopTime: stopTime,
-                        volume: note.volume || 0.5,
-                        attack: note.attack || 0.01,
-                        decay: note.decay || 0.1,
-                        sustain: note.sustain || 0.7,
-                        release: note.release || 0.1
-                    };
-                    
-                    // Create appropriate node based on channel type
-                    switch (channel) {
-                        case 'square1':
-                        case 'square2':
-                            options.duty = note.duty || 0.5;
-                            createSquareOscillatorOffline(offlineCtx, offlineGain, options);
-                            break;
-                        case 'triangle':
-                            createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
-                            break;
-                        case 'noise':
-                            options.metallic = note.metallic || false;
-                            options.frequency = frequency; // Use this to control noise "tone"
-                            createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
-                            break;
-                    }
-                    
-                    // Move to next note position
-                    beatPosition += note.duration || 0.25;
-                });
+                // If section has measures defined, use that for length
+                if (section.measures && section.measures > 0) {
+                    sectionDuration = section.measures * beatsPerMeasure;
+                }
+                
+                // Generate all notes for this section
+                if (section.tracks) {
+                    section.tracks.forEach(track => {
+                        if (!track.sequence) return;
+                        
+                        const channel = track.channel;
+                        let trackBeatPosition = currentBeatPosition;
+                        
+                        // For each note in the sequence
+                        track.sequence.forEach(note => {
+                            // Skip rests
+                            if (note.note === 'rest') {
+                                trackBeatPosition += note.duration || 0.25;
+                                return;
+                            }
+                            
+                            // Convert note name to frequency
+                            const frequency = noteToFreq[note.note] || 440;
+                            
+                            // Calculate timing
+                            const startTime = trackBeatPosition * secondsPerBeat;
+                            const noteDuration = (note.duration || 0.25) * secondsPerBeat;
+                            const stopTime = startTime + noteDuration;
+                            
+                            // Common parameters
+                            const options = {
+                                frequency: frequency,
+                                startTime: startTime,
+                                stopTime: stopTime,
+                                volume: note.volume || 0.5,
+                                attack: note.attack || 0.01,
+                                decay: note.decay || 0.1,
+                                sustain: note.sustain || 0.7,
+                                release: note.release || 0.1
+                            };
+                            
+                            // Create appropriate node based on channel type
+                            switch (channel) {
+                                case 'square1':
+                                case 'square2':
+                                    options.duty = note.duty || 0.5;
+                                    createSquareOscillatorOffline(offlineCtx, offlineGain, options);
+                                    break;
+                                case 'triangle':
+                                    createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
+                                    break;
+                                case 'noise':
+                                    options.metallic = note.metallic || false;
+                                    options.frequency = frequency; // Use this to control noise "tone"
+                                    createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
+                                    break;
+                            }
+                            
+                            // Update track position
+                            trackBeatPosition += note.duration || 0.25;
+                            
+                            // Update section duration based on tracks if needed
+                            if (sectionDuration === 0) {
+                                const noteOffset = trackBeatPosition - currentBeatPosition;
+                                if (noteOffset > sectionDuration) {
+                                    sectionDuration = noteOffset;
+                                }
+                            }
+                        });
+                    });
+                }
+                
+                // Move to next section position
+                currentBeatPosition += sectionDuration;
             }
-        });
+        }
         
         // Start rendering
         updateStatus('Rendering theme song for download...');
