@@ -3,6 +3,7 @@
 
 # Ignore a specific file
 package-lock.json
+CLAUDE.md
 
 # Ignore a specific folder and its contents
 /node_modules/
