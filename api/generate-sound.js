@@ -9,10 +9,15 @@ const anthropic = new Anthropic({
 // Advanced function to fix and complete truncated JSON arrays
 function fixIncompleteJson(jsonString, isThemeSong) {
   try {
+    // Debug the input JSON string
+    console.log("Attempting to parse JSON string:");
+    console.log(jsonString.substring(0, 200) + "..."); // Log the first 200 chars to avoid huge logs
+    
     // First try to parse as-is
     return JSON.parse(jsonString);
   } catch (parseError) {
-    console.log("Initial JSON parsing failed, attempting to fix incomplete JSON...");
+    console.log("Initial JSON parsing failed:", parseError.message);
+    console.log("Attempting to fix incomplete JSON...");
     
     // Create default structures based on type
     const defaultThemeSong = {
@@ -20,11 +25,19 @@ function fixIncompleteJson(jsonString, isThemeSong) {
       tempo: 120,
       timeSignature: "4/4",
       loopCount: 1,
-      tracks: []
+      sections: [{
+        name: "main",
+        measures: 4,
+        tracks: []
+      }]
     };
     
     const defaultSoundEffect = {
-      channels: []
+      segments: [{
+        name: "sound",
+        duration: 0.5,
+        channels: []
+      }]
     };
     
     try {
@@ -429,15 +442,17 @@ IMPORTANT FORMATTING INSTRUCTIONS:
     
     // Configure message content based on request type
     if (isThemeSong) {
-      // For theme songs, use JSON techniques to improve formatting
+      // For theme songs, use simplified JSON format to improve reliability
       messageOptions.messages = [
         {
           role: 'user',
-          content: `Compose a comprehensive NES-style theme song for: "${description}". Output ONLY the complete JSON data structure with no introduction or explanation.
+          content: `Compose a comprehensive NES-style theme song for: "${description}". 
 
-Create a multi-section song with distinct musical parts like intro, verse, chorus that play in sequence.
+IMPORTANT: Output ONLY the complete JSON data structure with NO introduction, explanation, or markdown code blocks.
 
-The JSON structure should follow this format exactly:
+Create a song with an intro section and at least one other section (verse, chorus, etc.) that play in sequence.
+
+The JSON structure should be exactly:
 {
   "title": "${description}",
   "tempo": 120,
@@ -481,7 +496,7 @@ The JSON structure should follow this format exactly:
       "measures": 8,
       "tracks": [
         {
-          "name": "Melody",
+          "name": "Melody", 
           "channel": "square1",
           "sequence": [
             {
@@ -499,7 +514,13 @@ The JSON structure should follow this format exactly:
       ]
     }
   ]
-}`
+}
+
+CRITICAL: 
+1. Your output MUST be ONLY the JSON, nothing else
+2. Ensure all arrays and objects are properly closed 
+3. Do not use markdown formatting or code blocks
+4. Verify all sections have at least one track, and all tracks have a sequence array`
         }
       ];
     } else {
@@ -577,7 +598,23 @@ Example of a multi-part effect with segments:
     
     // Extract thinking and parameters
     let thinking = '';
-    let responseData = isThemeSong ? { title: '', tempo: 120, tracks: [] } : { channels: [] };
+    let responseData = isThemeSong ? { 
+      title: 'Default Theme Song', 
+      tempo: 120, 
+      timeSignature: "4/4",
+      loopCount: 1,
+      sections: [{
+        name: "main",
+        measures: 4,
+        tracks: []
+      }]
+    } : { 
+      segments: [{
+        name: "sound",
+        duration: 0.5,
+        channels: []
+      }]
+    };
     
     for (const block of message.content) {
       if (block.type === 'thinking') {
@@ -586,15 +623,57 @@ Example of a multi-part effect with segments:
         try {
           // Extract JSON from the text response
           const text = block.text;
-          console.log("Raw text response:", text);
+          console.log("Raw text response length:", text.length);
+          console.log("Response starts with:", text.substring(0, 100));
+          console.log("Response ends with:", text.substring(text.length - 100));
+          
+          // Try to clean up any markdown formatting that might be present
+          let cleanedText = text.trim();
+          
+          // Remove markdown code blocks if present
+          cleanedText = cleanedText.replace(/```json\n|\n```|```/g, '');
+          
+          // Find the first opening brace (start of JSON)
+          const firstBrace = cleanedText.indexOf('{');
+          if (firstBrace >= 0) {
+            cleanedText = cleanedText.substring(firstBrace);
+            
+            // Find the last closing brace (end of JSON)
+            const lastBrace = cleanedText.lastIndexOf('}');
+            if (lastBrace >= 0) {
+              cleanedText = cleanedText.substring(0, lastBrace + 1);
+            }
+          }
+          
+          console.log("Cleaned JSON text length:", cleanedText.length);
           
           // For theme songs, try to parse the entire response as JSON first
           if (isThemeSong) {
             try {
-              responseData = JSON.parse(text.trim());
+              responseData = JSON.parse(cleanedText);
+              console.log("Successfully parsed theme song JSON");
+              
+              // Validate the structure
+              if (!responseData.sections && responseData.tracks) {
+                console.log("Converting legacy format to sections format");
+                // Convert legacy format to sections format
+                responseData = {
+                  title: responseData.title || "Theme Song",
+                  tempo: responseData.tempo || 120,
+                  timeSignature: responseData.timeSignature || "4/4",
+                  loopCount: responseData.loopCount || 1,
+                  sections: [{
+                    name: "main",
+                    measures: 16,
+                    tracks: responseData.tracks
+                  }]
+                };
+              }
+              
               continue; // If successful, skip the rest of the extraction logic
             } catch (err) {
-              console.log("Full response JSON parsing failed, trying to extract JSON...");
+              console.log("Full response JSON parsing failed:", err.message);
+              console.log("Trying to extract JSON with regex...");
             }
           }
           
@@ -604,8 +683,11 @@ Example of a multi-part effect with segments:
           
           if (jsonMatch) {
             const jsonString = jsonMatch[0].replace(/```json\n|```/g, '');
+            console.log("Extracted JSON with regex, length:", jsonString.length);
             // Use the error handling helper to parse the JSON safely
             responseData = fixIncompleteJson(jsonString, isThemeSong);
+          } else {
+            console.log("No JSON pattern found in the response");
           }
         } catch (err) {
           console.error('Error extracting JSON from response:', err);

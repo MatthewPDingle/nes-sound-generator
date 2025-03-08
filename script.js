@@ -275,8 +275,26 @@ async function generateThemeSong() {
 
         const result = await response.json();
         
-        // Display the results
-        musicParametersOutput.textContent = JSON.stringify(result.parameters, null, 2);
+        // Display the raw response for debugging
+        console.log("Raw API response:", result);
+        
+        // Check if we have valid parameters
+        if (!result.parameters) {
+            throw new Error("No parameters received from API");
+        }
+        
+        // Display the results with proper formatting
+        const formattedJSON = JSON.stringify(result.parameters, null, 2);
+        musicParametersOutput.textContent = formattedJSON;
+        
+        // Apply syntax highlighting and make it more readable
+        musicParametersOutput.style.whiteSpace = "pre";
+        musicParametersOutput.style.fontFamily = "monospace";
+        
+        // Validate the theme song parameters before storing
+        if (!result.parameters.sections && !result.parameters.tracks) {
+            throw new Error("Invalid theme song format: missing sections or tracks");
+        }
         
         // Store parameters for playback
         currentThemeSongParameters = result.parameters;
@@ -770,12 +788,19 @@ function playNextSegment(segmentIndex) {
 function playMusicalNote(note, channel, startTime) {
     if (!audioCtx) return null;
     
-    // Skip rests
-    if (note.note === 'rest') return null;
+    // Check for rest notes in multiple formats
+    if (note.note === 'rest' || note.note === 'Rest' || note.note === 'REST' || note.note === 'R') {
+        console.log("Skipping rest note at time", startTime);
+        return null;
+    }
     
     // Convert note name to frequency
-    const frequency = noteToFreq[note.note] || 440;
-    if (frequency === 0) return null; // It's a rest
+    const frequency = noteToFreq[note.note] || 0;
+    // Handle unknown notes or rests (frequency 0)
+    if (frequency === 0) {
+        console.log(`Skipping note with frequency 0: "${note.note}" at time ${startTime}`);
+        return null;
+    }
     
     // Calculate stop time based on tempo and note duration
     const tempo = currentThemeSongParameters.tempo || 120;
@@ -833,8 +858,8 @@ function playMusicalNote(note, channel, startTime) {
     };
 }
 
-// Start playing the theme song
-function playThemeSong() {
+// Start playing the theme song using section buffers
+async function playThemeSong() {
     if (!currentThemeSongParameters || !currentThemeSongParameters.sections) {
         updateStatus('No theme song parameters available');
         return;
@@ -846,47 +871,246 @@ function playThemeSong() {
     
     // Resume audio context if suspended
     if (audioCtx.state === 'suspended') {
-        audioCtx.resume().then(() => {
-            playThemeSong();
-        }).catch(err => {
+        try {
+            await audioCtx.resume();
+        } catch (err) {
             updateStatus('Failed to resume audio: ' + err.message);
-        });
-        return;
+            return;
+        }
     }
     
     // Stop any currently playing sounds
     stopAllSounds();
     
     currentlyPlayingMusic = true;
+    updateStatus('Preparing theme song for playback...');
     
-    // Play sections sequentially
-    playNextSection(0);
-    
-    updateStatus('Playing theme song...');
+    try {
+        const tempo = currentThemeSongParameters.tempo || 120;
+        const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
+        const songTitle = currentThemeSongParameters.title || "Theme Song";
+        
+        // Render each section to a buffer (similar to saving)
+        const sectionBuffers = [];
+        
+        // Process each section one-by-one
+        for (let i = 0; i < currentThemeSongParameters.sections.length; i++) {
+            const section = currentThemeSongParameters.sections[i];
+            const sectionName = section.name || `Section ${i+1}`;
+            
+            updateStatus(`Preparing section ${i+1}/${currentThemeSongParameters.sections.length}: ${sectionName}`);
+            
+            // Render this section to its own buffer
+            const sectionBuffer = await renderSectionToBuffer(
+                section, 
+                tempo, 
+                timeSignature,
+                audioCtx.sampleRate
+            );
+            
+            // Add to our collection
+            sectionBuffers.push(sectionBuffer);
+        }
+        
+        updateStatus('All sections prepared, starting playback...');
+        
+        // Create a combined buffer for seamless playback
+        console.log("Concatenating all section buffers for seamless playback...");
+        const combinedBuffer = concatenateAudioBuffers(sectionBuffers, audioCtx);
+        console.log(`Created combined buffer: ${combinedBuffer.duration.toFixed(3)}s, ${combinedBuffer.length} samples`);
+        
+        // Create a single source for the entire theme
+        const source = audioCtx.createBufferSource();
+        source.buffer = combinedBuffer;
+        
+        // Connect to master gain
+        source.connect(masterGain);
+        
+        // Schedule playback with a small delay for clean start
+        const startTime = audioCtx.currentTime + 0.1;
+        source.start(startTime);
+        console.log(`Scheduled combined theme song playback at time ${startTime}`);
+        
+        // Record source for cleanup
+        activeNodes.push({
+            stop: function(time) {
+                try {
+                    source.stop(time);
+                } catch (e) {
+                    console.error('Error stopping buffer source:', e);
+                }
+            }
+        });
+        
+        // Schedule section status updates
+        let sectionStartTime = startTime;
+        sectionBuffers.forEach((buffer, index) => {
+            const section = currentThemeSongParameters.sections[index];
+            const sectionName = section.name || `Section ${index+1}`;
+            
+            // Schedule status update when this section starts
+            setTimeout(() => {
+                if (currentlyPlayingMusic) {
+                    updateStatus(`Playing theme song: ${sectionName}...`);
+                }
+            }, (sectionStartTime - audioCtx.currentTime) * 1000);
+            
+            // Move start time forward for next section update
+            sectionStartTime += buffer.duration;
+        });
+        
+        // When the entire song is done
+        setTimeout(() => {
+            if (currentlyPlayingMusic) {
+                updateStatus('Theme song completed');
+                currentlyPlayingMusic = false;
+            }
+        }, (startTime - audioCtx.currentTime) * 1000);
+        
+    } catch (err) {
+        console.error('Error playing theme song:', err);
+        updateStatus('Error playing theme song: ' + err.message);
+        currentlyPlayingMusic = false;
+    }
 }
 
-// Recursive function to play sections one after another
-function playNextSection(sectionIndex) {
-    if (sectionIndex >= currentThemeSongParameters.sections.length) {
-        updateStatus('Theme song completed');
-        currentlyPlayingMusic = false;
-        return;
-    }
+// Prepare the complete music sequence with all sections combined
+function prepareFullMusicSequence() {
+    if (!currentThemeSongParameters || !currentThemeSongParameters.sections) return;
     
-    const section = currentThemeSongParameters.sections[sectionIndex];
+    const tempo = currentThemeSongParameters.tempo || 120;
+    const secondsPerBeat = 60 / tempo;
+    const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
+    const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
     
-    // Get section name for status display
-    const sectionName = section.name || `Section ${sectionIndex + 1}`;
-    updateStatus(`Playing theme song: ${sectionName}...`);
+    // Initialize the full music sequence
+    currentMusicSequence = [];
     
-    // Prepare and play this section
-    prepareMusicSequenceForSection(section);
+    // First, create a flat, unified song structure by combining all sections
+    // This is a completely new approach to avoid gaps between sections
+    const unifiedSong = {
+        title: currentThemeSongParameters.title,
+        tempo: currentThemeSongParameters.tempo,
+        timeSignature: currentThemeSongParameters.timeSignature,
+        tracks: {}  // Will hold merged tracks from all sections
+    };
     
-    // Start playing the sequence for this section
-    scheduleMusicSequence(() => {
-        // When this section finishes, play the next one
-        playNextSection(sectionIndex + 1);
+    // Track the current beat position for each section
+    let currentBeatPosition = 0;
+    
+    // Get total number of measures/beats across all sections
+    let totalBeats = 0;
+    currentThemeSongParameters.sections.forEach(section => {
+        if (section.measures && section.measures > 0) {
+            totalBeats += section.measures * beatsPerMeasure;
+        } else {
+            let sectionBeats = 0;
+            if (section.tracks) {
+                section.tracks.forEach(track => {
+                    if (!track.sequence) return;
+                    let trackBeats = 0;
+                    track.sequence.forEach(note => {
+                        trackBeats += note.duration || 0.25;
+                    });
+                    if (trackBeats > sectionBeats) {
+                        sectionBeats = trackBeats;
+                    }
+                });
+            }
+            totalBeats += sectionBeats;
+        }
     });
+    
+    console.log(`Total song length: ${totalBeats} beats (${(totalBeats * secondsPerBeat).toFixed(2)}s)`);
+    
+    // Process each section and build merged tracks
+    currentThemeSongParameters.sections.forEach((section, sectionIndex) => {
+        // Calculate section duration in beats
+        let sectionDuration = 0;
+        
+        // If section has measures defined, use that for consistent length
+        if (section.measures && section.measures > 0) {
+            sectionDuration = section.measures * beatsPerMeasure;
+        } else {
+            // Otherwise calculate based on track note durations
+            if (section.tracks) {
+                section.tracks.forEach(track => {
+                    if (!track.sequence) return;
+                    let trackBeats = 0;
+                    track.sequence.forEach(note => {
+                        trackBeats += note.duration || 0.25;
+                    });
+                    if (trackBeats > sectionDuration) {
+                        sectionDuration = trackBeats;
+                    }
+                });
+            }
+        }
+        
+        console.log(`Section ${section.name || sectionIndex}: ${sectionDuration} beats, starts at beat ${currentBeatPosition}`);
+        
+        // Process each track in the section
+        if (section.tracks) {
+            section.tracks.forEach(track => {
+                if (!track.sequence) return;
+                
+                const channel = track.channel;
+                const trackId = `${channel}_${sectionIndex}`;
+                
+                // Make sure this track exists in our unified song
+                if (!unifiedSong.tracks[channel]) {
+                    unifiedSong.tracks[channel] = [];
+                }
+                
+                // Process each note in the sequence
+                let notePosition = currentBeatPosition;
+                track.sequence.forEach(note => {
+                    // Calculate timing precisely in seconds
+                    const startTime = notePosition * secondsPerBeat;
+                    
+                    // Create a note event for the unified sequence
+                    currentMusicSequence.push({
+                        startBeat: notePosition,
+                        startTime: startTime,
+                        note: note,
+                        channel: channel,
+                        section: section.name || `Section ${sectionIndex + 1}`
+                    });
+                    
+                    // Move position forward
+                    notePosition += note.duration || 0.25;
+                });
+            });
+        }
+        
+        // Advance to the next section with a small buffer to prevent silence gaps
+        currentBeatPosition += sectionDuration + 0.25; // Add 1/4 beat buffer between sections
+        console.log(`Added buffer after section ${section.name || sectionIndex}, next section starts at beat ${currentBeatPosition}`);
+    });
+    
+    // Sort the complete sequence by start time
+    currentMusicSequence.sort((a, b) => a.startTime - b.startTime);
+    
+    // Log the final sequence information
+    console.log(`Unified sequence created with ${currentMusicSequence.length} notes spanning ${totalBeats} beats`);
+    
+    // Create artificial note connections by adjusting starting/ending times
+    // This should eliminate gaps between sections
+    for (let i = 1; i < currentMusicSequence.length; i++) {
+        const prevEvent = currentMusicSequence[i-1];
+        const currEvent = currentMusicSequence[i];
+        
+        // If same channel and there's a gap, adjust timing
+        if (prevEvent.channel === currEvent.channel) {
+            const prevDuration = prevEvent.note.duration || 0.25;
+            const prevEndTime = prevEvent.startTime + (prevDuration * secondsPerBeat);
+            
+            // If there's a significant gap (more than 50ms), log it
+            if (currEvent.startTime - prevEndTime > 0.05) {
+                console.log(`Gap detected: ${(currEvent.startTime - prevEndTime).toFixed(3)}s between notes in ${currEvent.channel}`);
+            }
+        }
+    }
 }
 
 // Stop the theme song
@@ -895,73 +1119,12 @@ function stopThemeSong() {
     updateStatus('Theme song stopped');
 }
 
-// Prepare the music sequence for a specific section
-function prepareMusicSequenceForSection(section) {
-    if (!section || !section.tracks) return;
-    
-    const tempo = currentThemeSongParameters.tempo || 120;
-    const secondsPerBeat = 60 / tempo;
-    
-    // Initialize music sequence
-    currentMusicSequence = [];
-    
-    // Calculate total duration of the section
-    let totalBeats = 0;
-    section.tracks.forEach(track => {
-        if (!track.sequence) return;
-        
-        let trackBeats = 0;
-        track.sequence.forEach(note => {
-            trackBeats += note.duration || 0.25;
-        });
-        
-        if (trackBeats > totalBeats) {
-            totalBeats = trackBeats;
-        }
-    });
-    
-    // If section has measures defined, use that for consistent length
-    if (section.measures && section.measures > 0) {
-        // Each measure is typically 4 beats in 4/4 time
-        const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
-        const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
-        totalBeats = section.measures * beatsPerMeasure;
-    }
-    
-    // Set loop count (only applies within a section)
-    const loopCount = 1; // Sections play once each
-    
-    // Generate note events for each track
-    section.tracks.forEach(track => {
-        if (!track.sequence) return;
-        
-        const channel = track.channel;
-        
-        // For each loop
-        for (let loop = 0; loop < loopCount; loop++) {
-            let beatPosition = loop * totalBeats;
-            
-            // For each note in the sequence
-            track.sequence.forEach(note => {
-                // Calculate timing
-                const startTime = beatPosition * secondsPerBeat;
-                
-                // Add note event to sequence
-                currentMusicSequence.push({
-                    startBeat: beatPosition,
-                    startTime: startTime,
-                    note: note,
-                    channel: channel
-                });
-                
-                // Move to next note position
-                beatPosition += note.duration || 0.25;
-            });
-        }
-    });
-    
-    // Sort sequence by start time
-    currentMusicSequence.sort((a, b) => a.startTime - b.startTime);
+// This function is no longer used - kept for reference
+// Now we use prepareFullMusicSequence instead
+function _prepareMusicSequenceForSection_DEPRECATED(section) {
+    // This function is deprecated and no longer used
+    // Keeping for reference
+    console.warn("This function is deprecated - using prepareFullMusicSequence instead");
 }
 
 // Schedule and play the music sequence
@@ -977,6 +1140,7 @@ function scheduleMusicSequence(onComplete) {
     // Find notes to play in the next schedule window
     const notesToPlay = [];
     let minNextTime = Infinity;
+    let currentSection = "";
     
     for (let i = 0; i < currentMusicSequence.length; i++) {
         const event = currentMusicSequence[i];
@@ -986,6 +1150,12 @@ function scheduleMusicSequence(onComplete) {
         if (event.startTime <= now + scheduleAheadTime) {
             notesToPlay.push(event);
             event.hasPlayed = true;
+            
+            // Update status display when section changes
+            if (event.section && event.section !== currentSection) {
+                currentSection = event.section;
+                updateStatus(`Playing theme song: ${currentSection}...`);
+            }
         } else {
             minNextTime = Math.min(minNextTime, event.startTime);
             break;
@@ -1009,12 +1179,13 @@ function scheduleMusicSequence(onComplete) {
         if (allPlayed) {
             setTimeout(() => {
                 if (currentlyPlayingMusic) {
-                    // This section is completed
+                    updateStatus('Theme song completed');
+                    currentlyPlayingMusic = false;
                     if (typeof onComplete === 'function') {
                         onComplete();
                     }
                 }
-            }, 1000); // Wait a bit after last note
+            }, 500); // Small buffer after the last note
         } else {
             // Schedule next check
             musicSchedulerId = setTimeout(() => scheduleMusicSequence(onComplete), 100);
@@ -1046,7 +1217,7 @@ function createSquareOscillatorOffline(offlineCtx, masterGain, options = {}) {
             attack: options.attack || 0.01,
             decay: options.decay || 0.1,
             sustain: options.sustain || 0.7,
-            release: options.release || 0.1
+            release: options.release || 0.05
         };
         
         // Calculate timings
@@ -1071,7 +1242,7 @@ function createSquareOscillatorOffline(offlineCtx, masterGain, options = {}) {
         }
         
         // Schedule stop
-        oscillator.stop(options.stopTime + 0.1); // Small buffer after release
+        oscillator.stop(options.stopTime + 0.05); // Small buffer after release
     } catch (err) {
         console.error('Error creating square oscillator for offline rendering:', err);
     }
@@ -1101,7 +1272,7 @@ function createTriangleOscillatorOffline(offlineCtx, masterGain, options = {}) {
             attack: options.attack || 0.01,
             decay: options.decay || 0.1,
             sustain: options.sustain || 0.8,
-            release: options.release || 0.1
+            release: options.release || 0.05
         };
         
         // Calculate timings
@@ -1126,7 +1297,7 @@ function createTriangleOscillatorOffline(offlineCtx, masterGain, options = {}) {
         }
         
         // Schedule stop
-        oscillator.stop(options.stopTime + 0.1); // Small buffer after release
+        oscillator.stop(options.stopTime + 0.05); // Small buffer after release
     } catch (err) {
         console.error('Error creating triangle oscillator for offline rendering:', err);
     }
@@ -1187,7 +1358,7 @@ function createNoiseGeneratorOffline(offlineCtx, masterGain, options = {}) {
             attack: options.attack || 0.01,
             decay: options.decay || 0.1,
             sustain: options.sustain || 0.5,
-            release: options.release || 0.1
+            release: options.release || 0.05
         };
         
         // Calculate timings
@@ -1203,7 +1374,7 @@ function createNoiseGeneratorOffline(offlineCtx, masterGain, options = {}) {
         gainNode.gain.linearRampToValueAtTime(0, options.stopTime);
         
         // Schedule stop
-        noiseSource.stop(options.stopTime + 0.1); // Small buffer after release
+        noiseSource.stop(options.stopTime + 0.05); // Small buffer after release
     } catch (err) {
         console.error('Error creating noise generator for offline rendering:', err);
     }
@@ -1399,6 +1570,268 @@ async function saveSoundEffect() {
     }
 }
 
+// Helper function to concatenate audio buffers - with better tone handling
+function concatenateAudioBuffers(buffers, audioContext) {
+    // Calculate total length, properly handling section transitions
+    let totalLength = 0;
+    const effectiveLengths = [];
+    const effectiveStarts = [];
+    
+    // First pass: analyze buffers to find audio boundaries
+    for (let i = 0; i < buffers.length; i++) {
+        const buffer = buffers[i];
+        const channelData = buffer.getChannelData(0);
+        let effectiveStart = 0;
+        let effectiveLength = buffer.length;
+        
+        // Find non-silent start (for sections after the first)
+        if (i > 0) {
+            // Skip very low amplitude noise at the start
+            while (effectiveStart < buffer.length && Math.abs(channelData[effectiveStart]) < 0.005) {
+                effectiveStart++;
+            }
+            
+            if (effectiveStart > 0) {
+                console.log(`Buffer ${i+1} has silent start, skipping ${effectiveStart} samples`);
+            }
+        }
+        
+        // Find where audio effectively ends (for all sections except last)
+        if (i < buffers.length - 1) {
+            // Start from the end and work backwards
+            let audioEnd = buffer.length - 1;
+            
+            // First, skip very quiet noise
+            while (audioEnd > 0 && Math.abs(channelData[audioEnd]) < 0.005) {
+                audioEnd--;
+            }
+            
+            // Then look for sustained tone - if we have a sequence of similar amplitude samples
+            // this might be a sustained tone that should be cut off
+            if (audioEnd > 0) {
+                const amplitudeAtEnd = Math.abs(channelData[audioEnd]);
+                let sustainedToneStart = audioEnd;
+                
+                // Check for a sustained tone by looking for consistent amplitude
+                // over a period of time (more than 100ms of similar amplitude is likely a held note)
+                const sampleThreshold = buffer.sampleRate * 0.1; // 100ms
+                
+                while (sustainedToneStart > 0 &&
+                       Math.abs(Math.abs(channelData[sustainedToneStart]) - amplitudeAtEnd) < 0.01 &&
+                       audioEnd - sustainedToneStart < sampleThreshold) {
+                    sustainedToneStart--;
+                }
+                
+                // If we found a sustained tone of significant length
+                if (audioEnd - sustainedToneStart > buffer.sampleRate * 0.05) { // At least 50ms
+                    console.log(`Buffer ${i+1} has sustained tone at end, may trim it`);
+                    
+                    // Check if the next buffer starts with similar tone - if not, we should trim this
+                    if (i + 1 < buffers.length) {
+                        const nextBuffer = buffers[i + 1];
+                        const nextData = nextBuffer.getChannelData(0);
+                        
+                        // Skip silence at start of next buffer
+                        let nextStart = 0;
+                        while (nextStart < nextBuffer.length && Math.abs(nextData[nextStart]) < 0.005) {
+                            nextStart++;
+                        }
+                        
+                        // If next buffer starts with a different amplitude (not the same sustained tone)
+                        // then we'll trim the current buffer's sustained tone
+                        if (nextStart < nextBuffer.length) {
+                            const nextAmplitude = Math.abs(nextData[nextStart]);
+                            if (Math.abs(nextAmplitude - amplitudeAtEnd) > 0.1) {
+                                // Find a good place to fade out - about 50ms before the end
+                                const fadePoint = Math.max(0, sustainedToneStart - Math.floor(buffer.sampleRate * 0.05));
+                                effectiveLength = fadePoint;
+                                console.log(`Trimming sustained tone in buffer ${i+1}, removed ${buffer.length - effectiveLength} samples`);
+                            } else {
+                                console.log(`Sustained tone continues in next section, keeping it`);
+                            }
+                        }
+                    }
+                } else {
+                    effectiveLength = audioEnd + 1;
+                    if (buffer.length - effectiveLength > 0) {
+                        console.log(`Buffer ${i+1} trimmed ${buffer.length - effectiveLength} silent samples from end`);
+                    }
+                }
+            }
+        }
+        
+        effectiveStarts.push(effectiveStart);
+        effectiveLengths.push(effectiveLength - effectiveStart);
+        totalLength += effectiveLength - effectiveStart;
+    }
+    
+    console.log(`Creating buffer for ${buffers.length} sections, total length: ${totalLength} samples`);
+    
+    // Create new buffer with combined length
+    const result = audioContext.createBuffer(
+        buffers[0].numberOfChannels,
+        totalLength,
+        buffers[0].sampleRate
+    );
+    
+    // Copy data from each buffer
+    let offset = 0;
+    for (let i = 0; i < buffers.length; i++) {
+        const buffer = buffers[i];
+        const effectiveStart = effectiveStarts[i];
+        const effectiveLength = effectiveLengths[i];
+        
+        console.log(`Concatenating buffer ${i+1}/${buffers.length}: ${(effectiveLength/buffer.sampleRate).toFixed(3)}s (from ${(effectiveStart/buffer.sampleRate).toFixed(3)}s)`);
+        
+        // Copy this buffer's data to the correct offset
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            const resultData = result.getChannelData(channel);
+            const bufferData = buffer.getChannelData(channel);
+            
+            // Use a very short fade-in and fade-out to avoid clicks (1ms)
+            const fadeInSamples = Math.min(10, effectiveLength);
+            const fadeOutSamples = Math.min(50, effectiveLength);
+            
+            // Copy samples with precise trimming
+            for (let j = 0; j < effectiveLength; j++) {
+                const sourceSample = bufferData[effectiveStart + j];
+                
+                // Apply very subtle fade-in if not the first section
+                if (i > 0 && j < fadeInSamples) {
+                    const fadeInFactor = j / fadeInSamples;
+                    resultData[offset + j] = sourceSample * fadeInFactor;
+                }
+                // Apply very subtle fade-out if not the last section
+                else if (i < buffers.length - 1 && j > effectiveLength - fadeOutSamples - 1) {
+                    const fadeOutFactor = (effectiveLength - j) / fadeOutSamples;
+                    resultData[offset + j] = sourceSample * fadeOutFactor;
+                }
+                // Normal copy
+                else {
+                    resultData[offset + j] = sourceSample;
+                }
+            }
+        }
+        
+        // Advance offset by the effective length
+        offset += effectiveLength;
+    }
+    
+    return result;
+}
+
+// Function to render a single section to an AudioBuffer
+async function renderSectionToBuffer(section, tempo, timeSignature, sampleRate = 44100) {
+    const sectionName = section.name || 'Unnamed Section';
+    updateStatus(`Rendering section: ${sectionName}...`);
+    
+    const secondsPerBeat = 60 / tempo;
+    const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
+    
+    // Calculate section duration
+    let sectionDuration = 0;
+    if (section.measures && section.measures > 0) {
+        sectionDuration = section.measures * beatsPerMeasure * secondsPerBeat;
+    } else if (section.tracks) {
+        section.tracks.forEach(track => {
+            if (!track.sequence) return;
+            let trackBeats = 0;
+            track.sequence.forEach(note => {
+                trackBeats += note.duration || 0.25;
+            });
+            const trackDuration = trackBeats * secondsPerBeat;
+            if (trackDuration > sectionDuration) {
+                sectionDuration = trackDuration;
+            }
+        });
+    }
+    
+    // Add a small buffer to ensure we capture all audio
+    sectionDuration += 0.05; 
+    
+    console.log(`Section ${sectionName}: ${sectionDuration.toFixed(3)}s`);
+    
+    // Create a dedicated offline context just for this section
+    const offlineCtx = new OfflineAudioContext({
+        numberOfChannels: 1,
+        length: Math.ceil(sampleRate * sectionDuration),
+        sampleRate: sampleRate
+    });
+    
+    // Create master gain
+    const offlineGain = offlineCtx.createGain();
+    offlineGain.gain.value = 0.5;
+    offlineGain.connect(offlineCtx.destination);
+    
+    // Render each track in this section
+    if (section.tracks) {
+        section.tracks.forEach(track => {
+            if (!track.sequence) return;
+            
+            const channel = track.channel;
+            let beatPosition = 0; // Start at 0 for this section
+            
+            // Process each note
+            track.sequence.forEach(note => {
+                if (note.note === 'rest') {
+                    beatPosition += note.duration || 0.25;
+                    return;
+                }
+                
+                // Convert note to frequency
+                const frequency = noteToFreq[note.note] || 440;
+                
+                // Calculate timing
+                const startTime = beatPosition * secondsPerBeat;
+                const noteDuration = (note.duration || 0.25) * secondsPerBeat;
+                const stopTime = startTime + noteDuration;
+                
+                // Create oscillator with standard settings
+                const options = {
+                    frequency: frequency,
+                    startTime: startTime,
+                    stopTime: stopTime,
+                    volume: note.volume || 0.5,
+                    attack: note.attack || 0.01,
+                    decay: note.decay || 0.1,
+                    sustain: note.sustain || 0.7,
+                    release: note.release || 0.05
+                };
+                
+                // Add oscillator based on channel type
+                switch (channel) {
+                    case 'square1':
+                    case 'square2':
+                        options.duty = note.duty || 0.5;
+                        createSquareOscillatorOffline(offlineCtx, offlineGain, options);
+                        break;
+                    case 'triangle':
+                        createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
+                        break;
+                    case 'noise':
+                        options.metallic = note.metallic || false;
+                        options.frequency = frequency;
+                        createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
+                        break;
+                }
+                
+                // Advance position
+                beatPosition += note.duration || 0.25;
+            });
+        });
+    }
+    
+    // Render this section to a buffer
+    try {
+        const buffer = await offlineCtx.startRendering();
+        console.log(`Rendered section "${sectionName}": ${buffer.duration.toFixed(3)}s, ${buffer.length} samples`);
+        return buffer;
+    } catch (err) {
+        console.error(`Error rendering section "${sectionName}":`, err);
+        throw err;
+    }
+}
+
 // Function to render and save theme song
 async function saveThemeSong() {
     if (!currentThemeSongParameters || !currentThemeSongParameters.sections) {
@@ -1409,162 +1842,57 @@ async function saveThemeSong() {
     const description = musicDescription.value.trim();
     const timestamp = new Date().toISOString();
     const soundId = 'music-' + Date.now();
+    const sampleRate = 44100;
     
     try {
-        // Calculate total duration of all sections combined
         const tempo = currentThemeSongParameters.tempo || 120;
-        const secondsPerBeat = 60 / tempo;
         const timeSignature = currentThemeSongParameters.timeSignature || "4/4";
-        const beatsPerMeasure = parseInt(timeSignature.split('/')[0]) || 4;
+        const songTitle = currentThemeSongParameters.title || description;
         
-        let totalBeats = 0;
-        // Calculate beats for each section
-        currentThemeSongParameters.sections.forEach(section => {
-            if (section.measures && section.measures > 0) {
-                // If section has measures, use that for length
-                totalBeats += section.measures * beatsPerMeasure;
-            } else {
-                // Otherwise calculate based on track note durations
-                let sectionBeats = 0;
-                if (section.tracks) {
-                    section.tracks.forEach(track => {
-                        if (!track.sequence) return;
-                        
-                        let trackBeats = 0;
-                        track.sequence.forEach(note => {
-                            trackBeats += note.duration || 0.25;
-                        });
-                        
-                        if (trackBeats > sectionBeats) {
-                            sectionBeats = trackBeats;
-                        }
-                    });
-                }
-                totalBeats += sectionBeats;
-            }
-        });
+        updateStatus(`Starting section-by-section rendering for "${songTitle}"...`);
         
-        // Set loop count (applies to entire song)
-        const loopCount = currentThemeSongParameters.loopCount || 1;
-        const totalSongBeats = totalBeats * loopCount;
+        // Create a temporary audio context for buffer manipulation
+        const tempCtx = new AudioContext({ sampleRate });
         
-        // Calculate song duration in seconds with some extra buffer
-        const songDuration = (totalSongBeats * secondsPerBeat) + 0.5;
+        // IMPORTANT NEW APPROACH: Render each section separately
+        const sectionBuffers = [];
         
-        // Create an offline audio context for rendering
-        const offlineCtx = new OfflineAudioContext({
-            numberOfChannels: 1,
-            length: Math.ceil(44100 * songDuration),
-            sampleRate: 44100
-        });
-        
-        // Create master gain
-        const offlineGain = offlineCtx.createGain();
-        offlineGain.gain.value = 0.5;
-        offlineGain.connect(offlineCtx.destination);
-        
-        let currentBeatPosition = 0;
-        
-        // For each loop of the entire song
-        for (let loop = 0; loop < loopCount; loop++) {
-            const loopStartBeat = loop * totalBeats;
-            currentBeatPosition = loopStartBeat;
+        // Process each section one-by-one
+        for (let i = 0; i < currentThemeSongParameters.sections.length; i++) {
+            const section = currentThemeSongParameters.sections[i];
+            const sectionName = section.name || `Section ${i+1}`;
             
-            // Process each section sequentially
-            for (const section of currentThemeSongParameters.sections) {
-                let sectionDuration = 0;
-                
-                // If section has measures defined, use that for length
-                if (section.measures && section.measures > 0) {
-                    sectionDuration = section.measures * beatsPerMeasure;
-                }
-                
-                // Generate all notes for this section
-                if (section.tracks) {
-                    section.tracks.forEach(track => {
-                        if (!track.sequence) return;
-                        
-                        const channel = track.channel;
-                        let trackBeatPosition = currentBeatPosition;
-                        
-                        // For each note in the sequence
-                        track.sequence.forEach(note => {
-                            // Skip rests
-                            if (note.note === 'rest') {
-                                trackBeatPosition += note.duration || 0.25;
-                                return;
-                            }
-                            
-                            // Convert note name to frequency
-                            const frequency = noteToFreq[note.note] || 440;
-                            
-                            // Calculate timing
-                            const startTime = trackBeatPosition * secondsPerBeat;
-                            const noteDuration = (note.duration || 0.25) * secondsPerBeat;
-                            const stopTime = startTime + noteDuration;
-                            
-                            // Common parameters
-                            const options = {
-                                frequency: frequency,
-                                startTime: startTime,
-                                stopTime: stopTime,
-                                volume: note.volume || 0.5,
-                                attack: note.attack || 0.01,
-                                decay: note.decay || 0.1,
-                                sustain: note.sustain || 0.7,
-                                release: note.release || 0.1
-                            };
-                            
-                            // Create appropriate node based on channel type
-                            switch (channel) {
-                                case 'square1':
-                                case 'square2':
-                                    options.duty = note.duty || 0.5;
-                                    createSquareOscillatorOffline(offlineCtx, offlineGain, options);
-                                    break;
-                                case 'triangle':
-                                    createTriangleOscillatorOffline(offlineCtx, offlineGain, options);
-                                    break;
-                                case 'noise':
-                                    options.metallic = note.metallic || false;
-                                    options.frequency = frequency; // Use this to control noise "tone"
-                                    createNoiseGeneratorOffline(offlineCtx, offlineGain, options);
-                                    break;
-                            }
-                            
-                            // Update track position
-                            trackBeatPosition += note.duration || 0.25;
-                            
-                            // Update section duration based on tracks if needed
-                            if (sectionDuration === 0) {
-                                const noteOffset = trackBeatPosition - currentBeatPosition;
-                                if (noteOffset > sectionDuration) {
-                                    sectionDuration = noteOffset;
-                                }
-                            }
-                        });
-                    });
-                }
-                
-                // Move to next section position
-                currentBeatPosition += sectionDuration;
-            }
+            updateStatus(`Rendering section ${i+1}/${currentThemeSongParameters.sections.length}: ${sectionName}`);
+            
+            // Render this section to its own buffer
+            const sectionBuffer = await renderSectionToBuffer(
+                section, 
+                tempo, 
+                timeSignature,
+                sampleRate
+            );
+            
+            // Add to our collection
+            sectionBuffers.push(sectionBuffer);
         }
         
-        // Start rendering
-        updateStatus('Rendering theme song for download...');
-        const renderedBuffer = await offlineCtx.startRendering();
+        updateStatus('All sections rendered, combining...');
         
-        // Convert buffer to WAV
-        const wavBlob = audioBufferToWav(renderedBuffer);
+        // Combine all section buffers into one complete song
+        const combinedBuffer = concatenateAudioBuffers(sectionBuffers, tempCtx);
         
-        // Store in our history
+        console.log(`Combined buffer created: ${combinedBuffer.duration.toFixed(2)}s, ${combinedBuffer.length} samples`);
+        
+        // Convert the combined buffer to WAV
+        const wavBlob = audioBufferToWav(combinedBuffer);
+        
+        // Store in history
         recordedBlobs[soundId] = wavBlob;
         
         // Add to sound history
         const soundItem = {
             id: soundId,
-            description: currentThemeSongParameters.title || description,
+            description: songTitle,
             timestamp: timestamp,
             type: 'theme',
             parameters: JSON.parse(JSON.stringify(currentThemeSongParameters))
@@ -1572,6 +1900,9 @@ async function saveThemeSong() {
         
         soundHistory.unshift(soundItem);
         updateSoundHistory();
+        
+        // Clean up
+        tempCtx.close();
         
         updateStatus('Theme song saved!');
     } catch (err) {
