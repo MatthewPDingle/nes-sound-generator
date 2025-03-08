@@ -1473,7 +1473,7 @@ async function saveSoundEffect() {
         });
         
         // Add a small buffer to ensure we capture the full sound
-        totalDuration += 0.2; // Buffer for smooth transitions
+        totalDuration += 0.05; // Reduced buffer for smoother transitions
         
         // Create an offline audio context for rendering with a more precise length
         const offlineCtx = new OfflineAudioContext({
@@ -1545,8 +1545,11 @@ async function saveSoundEffect() {
         updateStatus('Rendering sound for download...');
         const renderedBuffer = await offlineCtx.startRendering();
         
+        // Trim silence from the end of the buffer
+        const trimmedBuffer = trimSilenceFromEnd(renderedBuffer);
+        
         // Convert buffer to WAV
-        const wavBlob = audioBufferToWav(renderedBuffer);
+        const wavBlob = audioBufferToWav(trimmedBuffer);
         
         // Store in our history
         recordedBlobs[soundId] = wavBlob;
@@ -1568,6 +1571,72 @@ async function saveSoundEffect() {
         console.error('Error saving sound:', err);
         updateStatus('Failed to save sound: ' + err.message);
     }
+}
+
+// Function to trim silence from the end of an audio buffer
+function trimSilenceFromEnd(buffer) {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    
+    // Find the last non-silent sample across all channels
+    let lastNonSilentSample = 0;
+    
+    for (let channel = 0; channel < numChannels; channel++) {
+        const channelData = buffer.getChannelData(channel);
+        
+        // Start from the end and work backwards
+        let i = channelData.length - 1;
+        
+        // Skip very quiet noise (anything below -60dB or 0.001 amplitude)
+        const silenceThreshold = 0.001;
+        
+        while (i >= 0 && Math.abs(channelData[i]) < silenceThreshold) {
+            i--;
+        }
+        
+        // Add a short tail of about 100ms to avoid abrupt cutoffs
+        const tailSamples = Math.min(sampleRate * 0.1, 4410);
+        i = Math.min(channelData.length - 1, i + tailSamples);
+        
+        // Update the last non-silent sample position
+        lastNonSilentSample = Math.max(lastNonSilentSample, i);
+    }
+    
+    // If we found a good trim point
+    if (lastNonSilentSample > 0 && lastNonSilentSample < buffer.length - 1) {
+        console.log(`Trimming silence: removing ${buffer.length - lastNonSilentSample - 1} samples (${((buffer.length - lastNonSilentSample - 1) / sampleRate).toFixed(3)}s)`);
+        
+        // Create a new buffer with the trimmed length
+        const trimmedBuffer = new AudioContext().createBuffer(
+            numChannels,
+            lastNonSilentSample + 1,
+            sampleRate
+        );
+        
+        // Copy data from original buffer to the trimmed buffer
+        for (let channel = 0; channel < numChannels; channel++) {
+            const originalData = buffer.getChannelData(channel);
+            const trimmedData = trimmedBuffer.getChannelData(channel);
+            
+            // Apply a short fade out at the end to avoid clicks (5ms)
+            const fadeOutSamples = Math.min(sampleRate * 0.005, trimmedData.length);
+            
+            for (let i = 0; i < trimmedData.length; i++) {
+                // Apply fade out if we're in the last few samples
+                if (i > trimmedData.length - fadeOutSamples) {
+                    const fadeOutFactor = (trimmedData.length - i) / fadeOutSamples;
+                    trimmedData[i] = originalData[i] * fadeOutFactor;
+                } else {
+                    trimmedData[i] = originalData[i];
+                }
+            }
+        }
+        
+        return trimmedBuffer;
+    }
+    
+    // If we couldn't find a good trim point, return the original buffer
+    return buffer;
 }
 
 // Helper function to concatenate audio buffers - with better tone handling
@@ -1746,8 +1815,8 @@ async function renderSectionToBuffer(section, tempo, timeSignature, sampleRate =
         });
     }
     
-    // Add a small buffer to ensure we capture all audio
-    sectionDuration += 0.05; 
+    // Add minimal buffer to capture all audio without excess silence
+    sectionDuration += 0.02;
     
     console.log(`Section ${sectionName}: ${sectionDuration.toFixed(3)}s`);
     
@@ -1883,8 +1952,12 @@ async function saveThemeSong() {
         
         console.log(`Combined buffer created: ${combinedBuffer.duration.toFixed(2)}s, ${combinedBuffer.length} samples`);
         
+        // Trim silence from the end of the buffer
+        const trimmedBuffer = trimSilenceFromEnd(combinedBuffer);
+        console.log(`Trimmed buffer: ${trimmedBuffer.duration.toFixed(2)}s, ${trimmedBuffer.length} samples`);
+        
         // Convert the combined buffer to WAV
-        const wavBlob = audioBufferToWav(combinedBuffer);
+        const wavBlob = audioBufferToWav(trimmedBuffer);
         
         // Store in history
         recordedBlobs[soundId] = wavBlob;
