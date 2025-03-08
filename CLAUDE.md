@@ -5,7 +5,7 @@
 - **Deploy**: `npx vercel` - Deploys app to Vercel
 - **Install Dependencies**: `npm install` - Installs required packages
 - **Lint**: `npx eslint .` - Checks JavaScript code for errors and style issues
-- **Typecheck**: N/A - Project uses vanilla JavaScript without TypeScript
+- **Test API**: `curl -X POST http://localhost:3000/api/generate-sound -H "Content-Type: application/json" -d '{"description":"test sound","mode":"effect"}'` - Test API endpoint locally
 
 ## Code Style Guidelines
 - **JavaScript**: ES6+, functional approach with module-level state variables
@@ -16,6 +16,7 @@
 - **Naming**: camelCase for variables/functions, descriptive names prefixed by purpose
 - **Comments**: JSDoc for functions, inline comments for complex logic
 - **Audio Patterns**: Initialize/cleanup audio context consistently, abstract generation patterns
+- **Format**: No trailing commas, single quotes preferred, semicolons required
 
 ## Project Structure
 - `index.html`: Main application entry point with UI components

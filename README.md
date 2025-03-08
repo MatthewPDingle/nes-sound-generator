@@ -82,9 +82,30 @@ This will deploy your app to a Vercel URL and set up the necessary serverless fu
 
 The system now supports complex sound effects with multiple sequential parts. Try descriptions like:
 
-- "multifaceted powerup with 3 notes: mid, low, and then high" ([listen to example](powerup.wav))
-- "bells ringing three times" ([listen to example](bells.wav)) 
-- "three quiet fading thumping footsteps down stone stairs" ([listen to example](footsteps.wav))
+### Example Sound Effects
+
+#### Powerup Sound
+<audio controls>
+  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/powerup.wav" type="audio/wav">
+  Your browser does not support the audio element.
+</audio>
+"multifaceted powerup with 3 notes: mid, low, and then high"
+
+#### Bells Sound
+<audio controls>
+  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/bells.wav" type="audio/wav">
+  Your browser does not support the audio element.
+</audio>
+"bells ringing three times"
+
+#### Footsteps Sound
+<audio controls>
+  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/footsteps.wav" type="audio/wav">
+  Your browser does not support the audio element.
+</audio>
+"three quiet fading thumping footsteps down stone stairs"
+
+Other examples to try:
 - "thunder clap followed by rolling thunder"
 - "spaceship starting up, hovering, then blasting off"
 
@@ -104,6 +125,16 @@ Multi-segment effects are played in sequence, with each segment starting after t
 
 The system now supports complex musical compositions with multiple sequential sections. Try descriptions like:
 
+### Example Theme Song
+
+#### Heroic Adventure Theme
+<audio controls>
+  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/Heroic adventure with opening, mid section, and outro.mp3" type="audio/mpeg">
+  Your browser does not support the audio element.
+</audio>
+"Heroic adventure with opening, mid section, and outro"
+
+Other theme ideas to try:
 - "happy upbeat theme with distinct intro, verse, chorus, and bridge sections"
 - "epic boss battle music with tense intro and frantic main section"
 - "peaceful countryside theme with morning intro, day exploration section, and sunset finale"
