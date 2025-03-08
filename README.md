@@ -66,182 +66,18 @@ npx vercel
 
 This will deploy your app to a Vercel URL and set up the necessary serverless functions.
 
-## How to Use
+## Demos
 
-### Sound Effects
+### Sample Sound Effects
 
-1. Select the "Sound Effects" tab
-2. Enter a description of the sound you want (e.g., "spaceship landing", "treasure chest opening")
-3. For complex sequential effects, describe the sequence (e.g., "thunder clap followed by rolling thunder") 
-4. Click "Generate"
-5. The sound will automatically play and be saved to your history
-6. Use the "Show" toggle to view the generated parameters
-7. Replay sounds from history or download them as WAV files
+- [Powerup Sound](https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/powerup.wav) - "multifaceted powerup with 3 notes: mid, low, and then high"
+- [Bells Sound](https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/bells.wav) - "bells ringing three times"
+- [Footsteps Sound](https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/footsteps.wav) - "three quiet fading thumping footsteps down stone stairs"
 
-#### Multi-segment Sound Effects
+### Sample Theme Song
 
-The system now supports complex sound effects with multiple sequential parts. Try descriptions like:
+- [Heroic Adventure Theme](https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/Heroic%20adventure%20with%20opening,%20mid%20section,%20and%20outro.mp3) - "Heroic adventure with opening, mid section, and outro"
 
-### Example Sound Effects
-
-#### Powerup Sound
-<audio controls>
-  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/powerup.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
-"multifaceted powerup with 3 notes: mid, low, and then high"
-
-#### Bells Sound
-<audio controls>
-  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/bells.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
-"bells ringing three times"
-
-#### Footsteps Sound
-<audio controls>
-  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/footsteps.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
-"three quiet fading thumping footsteps down stone stairs"
-
-Other examples to try:
-- "thunder clap followed by rolling thunder"
-- "spaceship starting up, hovering, then blasting off"
-
-Multi-segment effects are played in sequence, with each segment starting after the previous one finishes.
-
-### Theme Songs
-
-1. Select the "Theme Songs" tab
-2. Enter a description of the music you want (e.g., "heroic adventure theme", "underwater level") 
-3. For complex compositions, specify the structure (e.g., "space opera with tense intro, heroic verse, and triumphant chorus")
-4. Click "Compose"
-5. The theme will automatically play and be saved to your history
-6. Use the "Show" toggle to view the generated musical score
-7. Play/download theme songs from the history section
-
-#### Multi-section Theme Songs
-
-The system now supports complex musical compositions with multiple sequential sections. Try descriptions like:
-
-### Example Theme Song
-
-#### Heroic Adventure Theme
-<audio controls>
-  <source src="https://raw.githubusercontent.com/MatthewPDingle/nes-sound-generator/main/demos/Heroic adventure with opening, mid section, and outro.mp3" type="audio/mpeg">
-  Your browser does not support the audio element.
-</audio>
-"Heroic adventure with opening, mid section, and outro"
-
-Other theme ideas to try:
-- "happy upbeat theme with distinct intro, verse, chorus, and bridge sections"
-- "epic boss battle music with tense intro and frantic main section"
-- "peaceful countryside theme with morning intro, day exploration section, and sunset finale"
-- "dungeon theme with mysterious intro, danger section, and victory ending"
-
-Each section plays in sequence with its own musical character and instrumentation.
-
-## Technical Details
-
-This project uses:
-
-- **Web Audio API**: For sound synthesis and playback
-- **Claude 3.7**: To generate parameters for NES-style audio
-- **Vercel**: For serverless API endpoints and hosting
-
-The app simulates the NES Audio Processing Unit's four channels:
-
-1. **Square Wave 1 & 2**: For melodies, harmonies, and effects
-2. **Triangle Wave**: For bass lines and deeper tones
-3. **Noise Channel**: For percussion and textured effects
-
-### JSON Structure
-
-#### Sound Effect Structure
-
-Sound effects use a segments-based structure:
-
-```json
-{
-  "segments": [
-    {
-      "name": "first_part",
-      "duration": 0.5,
-      "channels": [
-        { "type": "square1", ... },
-        { "type": "noise", ... }
-      ]
-    },
-    {
-      "name": "second_part",
-      "duration": 0.8,
-      "channels": [
-        { "type": "square2", ... },
-        { "type": "triangle", ... }
-      ]
-    }
-  ]
-}
-```
-
-Each segment plays sequentially, with its channels played simultaneously.
-
-#### Theme Song Structure
-
-Theme songs use a sections-based structure:
-
-```json
-{
-  "title": "Example Theme",
-  "tempo": 120,
-  "timeSignature": "4/4",
-  "loopCount": 1,
-  "sections": [
-    {
-      "name": "intro",
-      "measures": 4,
-      "tracks": [
-        {
-          "name": "Melody",
-          "channel": "square1",
-          "sequence": [
-            { "note": "C4", "duration": 0.25, ... }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "chorus",
-      "measures": 8,
-      "tracks": [
-        {
-          "name": "Melody",
-          "channel": "square1",
-          "sequence": [
-            { "note": "E4", "duration": 0.25, ... }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-Each section plays sequentially with its own musical structure and instrumentation.
-
-## File Structure
-
-```
-nes-sound-generator/
-├── index.html            # Main web interface
-├── package.json          # Project dependencies
-├── vercel.json           # Vercel configuration
-├── .env                  # API keys (create this from .env.template)
-├── .env.template         # Template for API configuration
-└── api/
-    └── generate-sound.js # Serverless API endpoint
-```
 
 ## Models
 
