@@ -112,9 +112,20 @@ function fixIncompleteJson(jsonString, isThemeSong) {
         }
       }
       
-      // 3. Fix missing closing brace on the main object
-      if (!fixedJson.trim().endsWith('}')) {
-        fixedJson = fixedJson + '}';
+      // 3. Fix missing closing braces on the main object with balanced bracket check
+      let openBraces = 0;
+      let closeBraces = 0;
+      
+      for (let char of fixedJson) {
+        if (char === '{') openBraces++;
+        if (char === '}') closeBraces++;
+      }
+      
+      // Add missing closing braces
+      if (openBraces > closeBraces) {
+        console.log(`Found unbalanced braces: ${openBraces} open vs ${closeBraces} close`);
+        // Add the exact number of missing closing braces
+        fixedJson = fixedJson + '}'.repeat(openBraces - closeBraces);
       }
       
       // Try parsing the fixed JSON
@@ -436,8 +447,13 @@ IMPORTANT FORMATTING INSTRUCTIONS:
     // Call Claude
     let messageOptions = {
       model: actualModel,
-      max_tokens: 20000,
+      max_tokens: 128000, // Increased to maximum supported by Claude 3.7
       system: systemPrompt,
+    };
+    
+    // Add beta header for extended output capability
+    const extraHeaders = {
+      "anthropic-beta": "output-128k-2025-02-19" // Enable 128K output tokens
     };
     
     // Configure message content based on request type
@@ -590,11 +606,13 @@ Example of a multi-part effect with segments:
     if (useExtendedThinking) {
       messageOptions.thinking = {
         type: 'enabled',
-        budget_tokens: 16000
+        budget_tokens: 32000 // Increased thinking budget to 32K
       };
     }
     
-    const message = await anthropic.messages.create(messageOptions);
+    const message = await anthropic.messages.create(messageOptions, {
+      headers: extraHeaders
+    });
     
     // Extract thinking and parameters
     let thinking = '';
@@ -678,8 +696,38 @@ Example of a multi-part effect with segments:
           }
           
           // Fall back to regex extraction if direct parsing fails
-          const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || 
-                         text.match(/{[\s\S]*?}/);
+          // First, try to match markdown code blocks
+          let jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+          
+          // If no markdown code block, try to find a complete JSON object with balance check
+          if (!jsonMatch) {
+            // Try to find a pair of balanced braces that contains a complete JSON object
+            let bracketCount = 0;
+            let startPos = -1;
+            let endPos = -1;
+            
+            // Find the first opening brace
+            startPos = text.indexOf('{');
+            
+            if (startPos >= 0) {
+              bracketCount = 1;
+              for (let i = startPos + 1; i < text.length; i++) {
+                if (text[i] === '{') bracketCount++;
+                if (text[i] === '}') bracketCount--;
+                
+                if (bracketCount === 0) {
+                  endPos = i;
+                  break;
+                }
+              }
+              
+              // If we found a complete JSON object
+              if (endPos > startPos) {
+                jsonMatch = [text.substring(startPos, endPos + 1)];
+                console.log("Found complete JSON object with balanced braces");
+              }
+            }
+          }
           
           if (jsonMatch) {
             const jsonString = jsonMatch[0].replace(/```json\n|```/g, '');
@@ -687,7 +735,25 @@ Example of a multi-part effect with segments:
             // Use the error handling helper to parse the JSON safely
             responseData = fixIncompleteJson(jsonString, isThemeSong);
           } else {
-            console.log("No JSON pattern found in the response");
+            console.log("No valid JSON pattern found in the response");
+            // This is likely a completely invalid response, return default structure
+            responseData = isThemeSong ? { 
+              title: "Claude is still learning how to return properly formatted JSON and occasionally makes mistakes. Please try again.",
+              tempo: 120,
+              timeSignature: "4/4",
+              loopCount: 1,
+              sections: [{
+                name: "error",
+                measures: 1,
+                tracks: []
+              }]
+            } : { 
+              segments: [{
+                name: "Claude is still learning how to return properly formatted JSON. Please try again.",
+                duration: 0.5,
+                channels: []
+              }]
+            };
           }
         } catch (err) {
           console.error('Error extracting JSON from response:', err);

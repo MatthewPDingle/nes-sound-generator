@@ -475,3 +475,124 @@ input {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
 }
+
+/* Error modal */
+.error-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    animation: fade-in 0.3s ease-out;
+}
+
+.error-modal {
+    background-color: var(--nes-dark);
+    color: white;
+    padding: 25px;
+    border-radius: 8px;
+    border: 3px solid var(--nes-error);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 450px;
+    width: 90%;
+    text-align: center;
+    animation: modal-in 0.3s ease-out, pulse-border 2s infinite alternate;
+}
+
+.error-modal strong {
+    font-size: 18px;
+    display: block;
+    margin-bottom: 10px;
+    color: var(--nes-error);
+}
+
+.error-modal p {
+    margin-bottom: 20px;
+}
+
+.error-details {
+    background-color: #111;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 15px 0;
+    text-align: left;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.error-details pre {
+    margin: 5px 0;
+    white-space: pre-wrap;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ddd;
+}
+
+.error-modal-button {
+    background-color: var(--nes-error);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    transition: all 0.2s;
+    border: 2px solid #c55a45;
+    margin-top: 10px;
+}
+
+.error-modal-button:hover {
+    transform: scale(1.05);
+    background-color: #f47a61;
+}
+
+.error-modal-button:active {
+    transform: scale(0.98);
+}
+
+/* Animation for modal */
+@keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes modal-in {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse-border {
+    from { border-color: var(--nes-error); }
+    to { border-color: var(--nes-warning); }
+}
+
+/* Legacy error notification - keeping for reference but not using */
+.error-notification {
+    display: none; /* Hiding in favor of modal */
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: var(--nes-error);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 4px;
+    border: 2px solid white;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 350px;
+    z-index: 1000;
+    opacity: 1;
+    transition: opacity 0.5s;
+    animation: slide-in 0.3s ease-out, pulse-border 2s infinite alternate;
+}

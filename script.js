@@ -125,6 +125,80 @@ function updateStatus(message) {
     }
 }
 
+// Show error modal
+function showErrorModal(errorType = 'general', errorDetails = '') {
+    // Create a modal dialog that requires user acknowledgment
+    const modalBackdrop = document.createElement('div');
+    modalBackdrop.className = 'error-modal-backdrop';
+    
+    // Set title and primary message based on error type
+    let title = 'An Error Occurred';
+    let primaryMessage = 'Something went wrong. Please try again.';
+    
+    if (errorType === 'music' || errorType === 'sound' || errorType === 'json') {
+        title = 'Claude is still learning';
+        primaryMessage = 'Claude is still learning how to return properly formatted JSON and occasionally makes mistakes.';
+    } else if (errorType === 'api') {
+        title = 'API Error';
+        primaryMessage = 'There was a problem connecting to the AI service.';
+    } else if (errorType === 'server') {
+        title = 'Server Error';
+        primaryMessage = 'The server encountered an error while processing your request.';
+    }
+    
+    // Customize message based on error type
+    let specificMessage = '';
+    if (errorType === 'music') {
+        specificMessage = 'The AI sometimes struggles with complex music data structures.';
+    } else if (errorType === 'sound') {
+        specificMessage = 'The AI sometimes struggles with complex sound effect structures.';
+    } else if (errorType === 'json') {
+        specificMessage = 'The AI occasionally struggles with complex JSON structures.';
+    } else if (errorType === 'api' || errorType === 'server') {
+        specificMessage = 'This could be due to high demand or temporary service issues.';
+    }
+    
+    // Construct error details display if provided
+    let errorDetailsSection = '';
+    if (errorDetails) {
+        errorDetailsSection = `
+            <div class="error-details">
+                <strong>Error details:</strong>
+                <pre>${errorDetails}</pre>
+            </div>
+        `;
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'error-modal';
+    modal.innerHTML = `
+        <strong>${title}</strong>
+        <p>
+            ${primaryMessage}<br><br>
+            ${specificMessage}<br><br>
+            Please try again with ${errorType === 'api' || errorType === 'server' ? 'a moment' : 'the same or a slightly different description'}.
+        </p>
+        ${errorDetailsSection}
+        <button class="error-modal-button">OK</button>
+    `;
+    
+    modalBackdrop.appendChild(modal);
+    document.body.appendChild(modalBackdrop);
+    
+    // Add event listener to the OK button to dismiss the modal
+    const okButton = modal.querySelector('.error-modal-button');
+    okButton.addEventListener('click', () => {
+        modalBackdrop.remove();
+    });
+    
+    // Also allow clicking outside the modal to dismiss
+    modalBackdrop.addEventListener('click', (event) => {
+        if (event.target === modalBackdrop) {
+            modalBackdrop.remove();
+        }
+    });
+}
+
 // Update visual meters
 function updateMeters() {
     for (let i = 0; i < 4; i++) {
@@ -205,10 +279,37 @@ async function generateSoundEffect() {
         });
 
         if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
+            const status = response.status;
+            const statusText = response.statusText;
+            
+            // Get additional error information if available
+            let errorInfo = '';
+            try {
+                const errorData = await response.json();
+                if (errorData && errorData.error) {
+                    errorInfo = errorData.error;
+                }
+            } catch (e) {
+                // If we can't parse the error response as JSON, just use the status text
+                errorInfo = statusText;
+            }
+            
+            // Determine error type based on status code
+            const errorType = status >= 500 ? 'server' : 'api';
+            const errorDetails = `Status: ${status} ${statusText}\n${errorInfo ? 'Message: ' + errorInfo : ''}`;
+            
+            throw new Error(`API error: ${errorType}:${errorDetails}`);
         }
 
         const result = await response.json();
+        
+        // Check if we've received an error message in the parameters
+        if (result.parameters && 
+            result.parameters[0] && 
+            result.parameters[0].name && 
+            result.parameters[0].name.includes("Claude is still learning")) {
+            throw new Error("Claude returned incomplete or invalid JSON. Please try again.");
+        }
         
         // Display the results
         parametersOutput.textContent = JSON.stringify(result.parameters, null, 2);
@@ -227,12 +328,39 @@ async function generateSoundEffect() {
         // Auto-play the sound
         playGeneratedSound();
         
-        // Auto-save the sound
+        // Auto-save the sound (only if it's not an error)
         saveSoundEffect();
     } catch (error) {
-        updateStatus('Error: ' + error.message);
         console.error('Generation error:', error);
         loadingIndicator.style.display = 'none';
+        
+        // Check for API or Server errors which come in special format
+        if (error.message.startsWith('API error:')) {
+            const errorParts = error.message.split(':');
+            const errorType = errorParts[1]; // 'api' or 'server'
+            const errorDetails = errorParts.slice(2).join(':').trim();
+            
+            updateStatus(`${errorType === 'server' ? 'Server' : 'API'} error occurred. Please try again.`);
+            
+            // Show appropriate error modal with details
+            showErrorModal(errorType, errorDetails);
+        }
+        // User-friendly error message for JSON formatting issues
+        else if (error.message.includes('JSON') || error.message.includes('parameters') || 
+            error.message.includes('incomplete') || error.message.includes('invalid')) {
+            
+            updateStatus('Claude is still learning to format sound data correctly. Please try again!');
+            
+            // Log the specific error for debugging
+            console.error('Sound effect JSON error details:', error);
+            
+            // Show error modal with sound-specific message
+            showErrorModal('sound');
+        } else {
+            updateStatus('Error: ' + error.message);
+            // Show general error modal
+            showErrorModal('general', error.message);
+        }
     } finally {
         generateButton.disabled = false;
     }
@@ -270,7 +398,26 @@ async function generateThemeSong() {
         });
 
         if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
+            const status = response.status;
+            const statusText = response.statusText;
+            
+            // Get additional error information if available
+            let errorInfo = '';
+            try {
+                const errorData = await response.json();
+                if (errorData && errorData.error) {
+                    errorInfo = errorData.error;
+                }
+            } catch (e) {
+                // If we can't parse the error response as JSON, just use the status text
+                errorInfo = statusText;
+            }
+            
+            // Determine error type based on status code
+            const errorType = status >= 500 ? 'server' : 'api';
+            const errorDetails = `Status: ${status} ${statusText}\n${errorInfo ? 'Message: ' + errorInfo : ''}`;
+            
+            throw new Error(`API error: ${errorType}:${errorDetails}`);
         }
 
         const result = await response.json();
@@ -294,6 +441,15 @@ async function generateThemeSong() {
         // Validate the theme song parameters before storing
         if (!result.parameters.sections && !result.parameters.tracks) {
             throw new Error("Invalid theme song format: missing sections or tracks");
+        }
+        
+        // Check if we've received a default/fallback response or error message
+        if ((result.parameters.title && result.parameters.title.includes("Claude is still learning")) || 
+            result.parameters.title === "Theme Song" || 
+            (!result.parameters.sections || result.parameters.sections.length === 0 || 
+            (result.parameters.sections[0].tracks && result.parameters.sections[0].tracks.length === 0)) ||
+            (result.parameters.sections && result.parameters.sections[0].name === "error")) {
+            throw new Error("Claude returned incomplete or invalid JSON. Please try again.");
         }
         
         // Store parameters for playback
@@ -320,7 +476,7 @@ async function generateThemeSong() {
         // Initialize audio engine for playback
         initAudio();
         
-        // Auto-save the theme song
+        // Auto-save the theme song (only if it's not an error)
         saveThemeSong();
 
         // Reset channel meters to ensure clean visualization
@@ -331,9 +487,37 @@ async function generateThemeSong() {
         // Auto-play the theme song
         playThemeSong();
     } catch (error) {
-        updateStatus('Error: ' + error.message);
         console.error('Theme generation error:', error);
         musicLoadingIndicator.style.display = 'none';
+        
+        // Check for API or Server errors which come in special format
+        if (error.message.startsWith('API error:')) {
+            const errorParts = error.message.split(':');
+            const errorType = errorParts[1]; // 'api' or 'server'
+            const errorDetails = errorParts.slice(2).join(':').trim();
+            
+            updateStatus(`${errorType === 'server' ? 'Server' : 'API'} error occurred. Please try again.`);
+            
+            // Show appropriate error modal with details
+            showErrorModal(errorType, errorDetails);
+        }
+        // User-friendly error message for JSON formatting issues
+        else if (error.message.includes('JSON') || error.message.includes('parameters') || 
+            error.message.includes('sections') || error.message.includes('tracks') ||
+            error.message.includes('incomplete') || error.message.includes('invalid')) {
+            
+            updateStatus('Claude is still learning to format music data correctly. Please try again!');
+            
+            // Log the specific error for debugging
+            console.error('Theme song JSON error details:', error);
+            
+            // Show error modal with music-specific message
+            showErrorModal('music');
+        } else {
+            updateStatus('Error: ' + error.message);
+            // Show general error modal
+            showErrorModal('general', error.message);
+        }
     } finally {
         generateMusicButton.disabled = false;
     }
@@ -1448,6 +1632,14 @@ async function saveSoundEffect() {
         return;
     }
     
+    // Don't save if it's an error message
+    if (currentSoundParameters[0] && 
+        currentSoundParameters[0].name && 
+        currentSoundParameters[0].name.includes("Claude is still learning")) {
+        console.log("Not saving sound effect with error");
+        return;
+    }
+    
     const description = soundDescription.value.trim();
     const timestamp = new Date().toISOString();
     const soundId = 'sound-' + Date.now();
@@ -1905,6 +2097,21 @@ async function renderSectionToBuffer(section, tempo, timeSignature, sampleRate =
 async function saveThemeSong() {
     if (!currentThemeSongParameters || !currentThemeSongParameters.sections) {
         updateStatus('No theme song to save');
+        return;
+    }
+    
+    // Don't save if it's an error message
+    if (currentThemeSongParameters.title && 
+        currentThemeSongParameters.title.includes("Claude is still learning")) {
+        console.log("Not saving theme song with error");
+        return;
+    }
+    
+    // Don't save if it has error section
+    if (currentThemeSongParameters.sections && 
+        currentThemeSongParameters.sections[0] && 
+        currentThemeSongParameters.sections[0].name === "error") {
+        console.log("Not saving theme song with error section");
         return;
     }
     
